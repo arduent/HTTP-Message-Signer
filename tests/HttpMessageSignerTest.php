@@ -33,7 +33,7 @@ final class HttpMessageSignerTest extends TestCase
     {
         $request = new Request(
             'POST',
-            'https://api.example.com/resource',
+            'https://api.example.com/resource?bat=&baz=3',
             [
                 'Host' => ['api.example.com'],
                 'Date' => [gmdate('D, d M Y H:i:s T')],
@@ -41,7 +41,7 @@ final class HttpMessageSignerTest extends TestCase
         );
 
         $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest(['@method', '@path', 'host', 'date']);
+        $signed = $this->signer->signRequest(['@method', '@path', '@request-target', 'host', 'date', '@query-param;name=baz']);
         $this->signer->setRequest($signed);
         $this->assertTrue($signed->hasHeader('signature'));
         $this->assertTrue($signed->hasHeader('signature-input'));

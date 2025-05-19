@@ -137,6 +137,7 @@ class HttpMessageSigner
     public function signRequest(array $coveredFields): RequestInterface
     {
         $headers = [];
+
         foreach ($this->request->getHeaders() as $name => $values) {
             $headers[strtolower($name)] = implode(', ', $values);
         }
