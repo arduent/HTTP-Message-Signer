@@ -132,9 +132,7 @@ class HttpMessageSigner
         return $this;
     }
 
-
-
-    /* PSR-7 inteface to signing function (use sign() below for non-PSR-7 reqs) */
+    /* PSR-7 interface to signing function */
 
     public function signRequest(array $coveredFields): RequestInterface
     {
@@ -156,8 +154,7 @@ class HttpMessageSigner
         return $request;
     }
 
-    /* PSR-7 verify interface and also check body digest if included 
-        use verify() for non PSR-7 reqs */
+    /* PSR-7 verify interface and also check body digest if included */
 
     public function verifyRequest(RequestInterface $request): bool
     {
@@ -175,13 +172,17 @@ class HttpMessageSigner
             }   
         }
 
-        return $this->verify(
-            $headers,
-            $params
-        );
+        return $this->verify($headers);
     }
 
-    /* check body digest */
+    /**
+     * check body digest
+     *
+     * From https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Digest
+     * The algorithm used to create a digest of the message content. Only two registered digest algorithms are
+     * considered secure: sha-512 and sha-256. The insecure (legacy) registered digest algorithms
+     * are: md5, sha (SHA-1), unixsum, unixcksum, adler (ADLER32) and crc32c.
+     */
 
     private function isBodyDigestValid(string $body, string $headerValue): bool
     {
@@ -208,7 +209,7 @@ class HttpMessageSigner
         $signatureComponents = [];
 
         foreach ($coveredFields as $field) {
-            $signatureComponents[] = $this->canonicalizeComponent($field, $headers, $params ?? []);
+            $signatureComponents[] = $this->canonicalizeComponent($field, $headers);
         }
 
         $paramList = implode(' ', array_map(fn($f) => '"' . $f . '"', $coveredFields));
@@ -228,10 +229,6 @@ class HttpMessageSigner
 
         return $headers;
     }
-
-    /* non-PSR-7 verify() note: does not check body digest, 
-        use verifyRequest if needed or calculate digest using helper functions, below
-    */
 
     public function verify(array $headers): bool
     {
@@ -254,7 +251,7 @@ class HttpMessageSigner
         $signatureComponents = [];
 
         foreach ($coveredFields as $field) {
-            $signatureComponents[] = $this->canonicalizeComponent($field, $headers, $params);
+            $signatureComponents[] = $this->canonicalizeComponent($field, $headers);
         }
 
         $signatureParamsStr = "($fieldsList)";
@@ -270,18 +267,22 @@ class HttpMessageSigner
         return $this->verifySignature($signatureBase, $decodedSig, $params['alg'] ?? $this->algorithm);
     }
 
-    private function canonicalizeComponent(string $field, array $headers, array $params): string
+    private function canonicalizeComponent(string $field, array $headers): string
     {
-        $fieldValue = match ($field) {
+        $parsedField = explode(';', $field);
+        $fieldName = $parsedField[0];
+        $fieldParams = $parsedField[1] ?? [];
+
+        $fieldValue = match ($fieldName) {
             '@signature-params' => '',
             '@method' => '"@method": ' . strtoupper($this->request->getMethod()),
             '@authority' => '"@authority": ' . $this->request->getUri()->getAuthority(),
             '@scheme' => '"@scheme": ' . strtoupper($this->request->getUri()->getScheme()),
-            '@target-uri' => '"@target-uri": ' . $this->request->getUri(), // ??
-            '@request-target' => '"@request-target": ' . $this->request->getUri(), // ??
+            '@target-uri' => '"@target-uri": ' . $this->request->getUri(), // ?? verify
+            '@request-target' => '"@request-target": ' . $this->request->getUri(), // ?? verify
             '@path' => '"@path": ' . $this->request->getUri()->getPath(),
             '@query' => '"@query": ' . $this->request->getUri()->getQuery(),
-            '@query-param' => '"@query-param": ' . $this->getQueryParam($params, 'name'),
+            '@query-param' => $this->getQueryParam($fieldParams) ?? '',
             '@status' => '"@status": ' . $this->response->getStatusCode(),
             default => '"' . $field . '": ' . $this->normalizeHeader($headers[$field] ?? ''),
         };
@@ -306,14 +307,11 @@ class HttpMessageSigner
             return null;
         }
 
-        // Remove the leading ? character, ir present.
-        $queryParams = ltrim($query, '?');
-
         $queryParams = explode('&', $query);
         foreach ($queryParams as $param) {
             // The '=' character is not required and indicates a boolean true value if unset.
             $element = explode('=', $param, 2);
-            $result[urldecode($element[0])] = isset($element[1]) ? urldecode($element[1]) : null;
+            $result[urldecode($element[0])] = isset($element[1]) ? urldecode($element[1]) : '';
         }
         return $result;
     }
@@ -337,6 +335,9 @@ class HttpMessageSigner
                         return $value;
                     }
                 }
+            }
+            if (is_string($params)) {
+                
             }
         }
         return null;
