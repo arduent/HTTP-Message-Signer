@@ -4,7 +4,12 @@ This is a fork of quantificant/http-message-signer ( https://github.com/arduent/
 
 It is currently a work in progress and possibly unstable (19-May-2025). What we're doing is extending the original work to more fully cover the expected behaviours of the base specification, as there are very few implementations of RFC9421 in php and as far as I'm aware at the moment, they are all woefully incomplete. The first step was to use a complete and tested structured HTTP header parser and require a PSR-7 request interface (which was optional in the original implementation). Then I've started supporting the full range of '@' derived components, and the associated named parameters which were also lacking. 
 
-If you would like to help with this effort, a fediverse group will be created and the location provided here. 
+If you would like to help with this effort, a fediverse group has been created at
+https://fediversity.site/channel/rfc9421 (rfc9421@fediversity.site)
+
+and a repository at https://codeberg.org/streams/http-sig9421
+
+It would be awkward currently to link to this in composer, so what we're doing is test driven development. Write tests that fail and modify the code until they pass. Once we have a well established test suite covering the full suite of behaviour and everything is green, we'll create a pull request on quantificant/http-message-signer . 
 
 
 A PHP 8.1+ library for signing and verifying HTTP messages (requests or responses) per [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421).
