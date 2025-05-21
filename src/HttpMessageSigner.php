@@ -205,8 +205,6 @@ class HttpMessageSigner
         return hash_equals($expectedDigest, $actualDigest);
     }
 
-    /* non-PSR-7 sign function, header names are made lowercase */
-
     public function sign(array $headers, string $coveredFields): array
     {
         $signatureComponents = [];
@@ -296,6 +294,7 @@ class HttpMessageSigner
 
             return $this->verifySignature($signatureBase, $decodedSig, $params['alg'] ?? $this->algorithm);
         }
+        return false;
     }
 
     private function canonicalizeComponent($field, array $headers): string
