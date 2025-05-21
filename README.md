@@ -4,7 +4,7 @@ This is a fork of quantificant/http-message-signer ( https://github.com/arduent/
 
 It is currently a work in progress and possibly unstable (19-May-2025). What we're doing is extending the original work to more fully cover the expected behaviours of the base specification, as there are very few implementations of RFC9421 in php and as far as I'm aware at the moment, they are all woefully incomplete. The first step was to use a complete and tested structured HTTP header parser and require a PSR-7 request interface (which was optional in the original implementation). Then I've started supporting the full range of '@' derived components, and the associated named parameters which were also lacking. 
 
-If you would like to help with this effort, a fediverse group will be created in the next several days and the location will be provided here. 
+If you would like to help with this effort, a fediverse group will be created and the location provided here. 
 
 
 A PHP 8.1+ library for signing and verifying HTTP messages (requests or responses) per [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421).
@@ -21,6 +21,8 @@ Supports:
 
 This is Alpha version please report issues. Thanks. Tested on PHP 8.4, should run fine on 8.1+
 
+Update to dev branch 2025-05-22: constructor has changed and "covered components" is now an HTTP structured InnerList (string) rather than an array of fields. You MUST provide a parseable/valid Innerlist element. RFC9421 is very opinionated, and signature failures are likely to be due to parsing incorrectly specified structured fields. You might want to wrap the sign and verify functionality in try/catch blocks and investigate all failures prior to releasing into production. 
+
 ## Installation
 
 ```bash
@@ -32,8 +34,17 @@ composer require quantificant/http-message-signer
 ```php
 use HttpSignature\HttpMessageSigner;
 
-$signer = new HttpMessageSigner(...);
-$request = $signer->signRequest($psrRequest, ['@method', '@path', 'host']);
+$request = new Request('GET', '/');
+$response = new Response(200, ['Content-Type' => 'text/plain']);
+
+$signer = (new HttpMessageSigner($request, $response))
+    ->setPrivateKey($this->privateKey)
+    ->setPublicKey($this->publicKey)
+    ->setKeyId('test-key')
+    ->setAlgorithm('rsa-sha256');
+
+$request = $signer->signRequest($psrRequest, '("@method", "@path", "host")');
+$isValid = $this->signer->verifyRequest($request);
 ```
 
 See full examples in `/tests`.
