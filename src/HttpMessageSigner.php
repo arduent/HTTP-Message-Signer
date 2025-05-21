@@ -2,6 +2,8 @@
 
 namespace HttpSignature;
 
+use Bakame\Http\StructuredFields\InnerList;
+use Bakame\Http\StructuredFields\Parameters;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Bakame\Http\StructuredFields\Dictionary;
@@ -134,7 +136,7 @@ class HttpMessageSigner
 
     /* PSR-7 interface to signing function */
 
-    public function signRequest(array $coveredFields): RequestInterface
+    public function signRequest(string $coveredFields): RequestInterface
     {
         $headers = [];
 
@@ -204,17 +206,22 @@ class HttpMessageSigner
 
     /* non-PSR-7 sign function, header names are made lowercase */
 
-    public function sign(array $headers, array $coveredFields): array
+    public function sign(array $headers, string $coveredFields): array
     {
-        $coveredFields = array_map('strtolower', $coveredFields);
         $signatureComponents = [];
 
-        foreach ($coveredFields as $field) {
-            $signatureComponents[] = $this->canonicalizeComponent($field, $headers);
+        $dict = $this->parseStructuredDict($coveredFields);
+
+        if ($dict->isNotEmpty()) {
+            $coveredStructuredFields = $dict->__toString();
+            $indices = $dict->indices();
+            foreach ($indices as $index) {
+                $member = $dict->getByIndex($index);
+                $signatureComponents[] = $this->canonicalizeComponent($member, $headers);
+            }
         }
 
-        $paramList = implode(' ', array_map(fn($f) => '"' . $f . '"', $coveredFields));
-        $signatureInput = '(' . $paramList . ');keyid="'
+        $signatureInput = $coveredStructuredFields . ';keyid="'
                 . $this->keyId . '";alg="' . $this->algorithm . '"';
 
         /**
@@ -239,6 +246,24 @@ class HttpMessageSigner
         $headers[] = 'signature-params';
 
         $sigInputDict = $this->parseStructuredDict($headers['signature-input']);
+
+        $signatureComponents = [];
+
+        if ($sigInputDict->isNotEmpty()) {
+            $coveredStructuredFields = $sigInputDict->__toString();
+            $indices = $sigInputDict->indices();
+            foreach ($indices as $index) {
+                [$dictName, $members] = $sigInputDict->getByIndex($index);
+                if ($members instanceof InnerList) {
+                    $indices = $members->indices();
+                    foreach ($indices as $index) {
+                       $member = $members->getByIndex($index);
+                       $signatureComponents[] = $this->canonicalizeComponent($member, $headers);
+                    }
+                }
+            }
+        }
+
         $sigDict = $this->parseStructuredDict($headers['signature']);
 
         if (!isset($sigInputDict['sig1'], $sigDict['sig1'])) {
@@ -249,11 +274,6 @@ class HttpMessageSigner
         $coveredFields = array_map(fn($f) => trim($f, '"'), 
                                         explode(' ', trim($fieldsList, '()')));
 
-        $signatureComponents = [];
-
-        foreach ($coveredFields as $field) {
-            $signatureComponents[] = $this->canonicalizeComponent($field, $headers);
-        }
 
         $signatureParamsStr = "($fieldsList)";
         foreach ($params as $k => $v) {
@@ -268,11 +288,11 @@ class HttpMessageSigner
         return $this->verifySignature($signatureBase, $decodedSig, $params['alg'] ?? $this->algorithm);
     }
 
-    private function canonicalizeComponent(string $field, array $headers): string
+    private function canonicalizeComponent($field, array $headers): string
     {
-        $parsedField = explode(';', $field);
-        $fieldName = $parsedField[0];
-        $fieldParams = $parsedField[1] ?? [];
+        $fieldName = $field->value();
+        $fieldParams = $field->parameters();
+
 
         $fieldValue = match ($fieldName) {
             '@signature-params' => '',
@@ -285,7 +305,7 @@ class HttpMessageSigner
             '@query' => '"@query": ' . $this->request->getUri()->getQuery(),
             '@query-param' => $this->getQueryParam($fieldParams) ?? '',
             '@status' => '"@status": ' . $this->response->getStatusCode(),
-            default => '"' . $field . '": ' . $this->normalizeHeader($headers[$field] ?? ''),
+            default => '"' . $field . '": ' . $this->normalizeHeader($headers[$fieldName] ?? ''),
         };
         return $fieldValue;
     }
@@ -324,21 +344,18 @@ class HttpMessageSigner
      *
      * Find one query parameter by name (which must supplied as parameters in the (structured) covered field list).
      */
-    private function getQueryParam($params, $name = 'name'): string|null
+    private function getQueryParam(Parameters $params, $name = 'name'): string|null
     {
         $queryString = $this->request->getUri()->getQuery();
         $queryParams = [];
         if ($queryString) {
             $queryParams = $this->parseQueryString($queryString);
-            if (is_array($params)) {
-                foreach ($params as $param => $value) {
-                    if ($param === $name) {
-                        return $value;
-                    }
-                }
-            }
-            if (is_string($params)) {
-                
+            if ($params->isNotEmpty()) {
+                $index = $params->indexByKey('name');
+                [ $name, $item ] = $params->getByIndex($index);
+                $fieldName = $item->value();
+                return '"_' . $fieldName . '_": "' . ($queryParams[$fieldName] ?? '') . '"';
+
             }
         }
         return null;
@@ -437,50 +454,18 @@ class HttpMessageSigner
 
     /* parse a structed dict */
 
-    private function parseStructuredDict(string $headerValue): array
+    private function parseStructuredDict(string $headerValue)
     {
-
         /**
          * Work in progress. This first section is an attempt to replace the following
          * manual parser with a structured parser built on bakame/http-structured-fields
          */
-
-        $parsed = Dictionary::fromHttpValue($headerValue);
-        $parsedString = $parsed->__toString();
-        $parsedArray = $parsed->toAssociative();
-        foreach ($parsedArray as $key => $value) {
-            $k = $key;
-            $v = $value;
+        if (str_starts_with(trim($headerValue), '(')) {
+            return InnerList::fromHttpValue($headerValue);
         }
-
-        /**
-         * Original manual parser
-         */
-        $result = [];
-        $parts = explode(',', $headerValue);
-        foreach ($parts as $part) {
-            if (preg_match('/\s*(\w+)=\(([^)]*)\)((;.*)*)/', $part, $matches)) {
-                $label = trim($matches[1]);
-                $fields = $matches[2];
-                $paramStr = trim($matches[3] ?? '');
-                $params = [];
-
-                if ($paramStr) {
-                    preg_match_all('/;([^=]+)=(".*?"|\d+|\w+)/', $paramStr, 
-                                        $paramMatches, PREG_SET_ORDER);
-                    foreach ($paramMatches as $pm) {
-                        $k = $pm[1];
-                        $v = $pm[2];
-                        $params[$k] = str_starts_with($v, '"') ? trim($v, '"') : $v;
-                    }
-                }
-
-                $result[$label] = [$fields, $params];
-            } elseif (preg_match('/\s*(\w+)=:([^:]+):/', $part, $matches)) {
-                $result[trim($matches[1])] = $matches[2];
-            }
+        else {
+            return Dictionary::fromHttpValue($headerValue);
         }
-        return $result;
     }
 
     /* Recommended to calculate the digest of the body and add it to 

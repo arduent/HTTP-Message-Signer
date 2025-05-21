@@ -41,7 +41,7 @@ final class HttpMessageSignerTest extends TestCase
         );
 
         $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest(['@method', '@path', '@request-target', 'host', 'date', '@query-param;name=baz']);
+        $signed = $this->signer->signRequest('("@method" "@path" "@request-target" "host" "date" "@query-param";name="baz")');
         $this->signer->setRequest($signed);
         $this->assertTrue($signed->hasHeader('signature'));
         $this->assertTrue($signed->hasHeader('signature-input'));
