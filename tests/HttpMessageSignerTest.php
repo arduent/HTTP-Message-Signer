@@ -64,7 +64,7 @@ final class HttpMessageSignerTest extends TestCase
         );
 
         $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest(['@method', '@path', 'host', 'content-digest']);
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")');
         $this->signer->setRequest($signed);
         $this->assertTrue($this->signer->verifyRequest($signed));
     }
@@ -85,7 +85,7 @@ final class HttpMessageSignerTest extends TestCase
         );
 
         $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest(['@method', '@path', 'host', 'content-digest']);
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")');
         $this->assertFalse($this->signer->verifyRequest($signed),
                 'Digest mismatch should cause verification to fail');
     }
@@ -103,7 +103,7 @@ final class HttpMessageSignerTest extends TestCase
         );
 
         $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest(['@method', '@path', 'host', 'date']);
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "date")');
         $this->signer->setRequest($signed);
         $tampered = $signed->withHeader('Host', 'attacker.com');
         $this->signer->setRequest($tampered);
@@ -169,7 +169,7 @@ final class HttpMessageSignerTest extends TestCase
         $this->signer->setRequest($request);
         $digest = $this->signer->createContentDigestHeader((string) $request->getBody());
         $request = $request->withHeader('Content-Digest', $digest);
-        $request = $this->signer->signRequest(['@method', '@path', 'host', 'date', 'content-digest']);
+        $request = $this->signer->signRequest('("@method" "@path" "host" "date" "content-digest")');
 
         echo "\n\nManual Inspection\n\n";
 
@@ -201,12 +201,7 @@ final class HttpMessageSignerTest extends TestCase
 
         $headers['content-digest'] = $this->signer->createContentDigestHeader($body);
 
-        $signed = $this->signer->sign($headers, [
-            '@method',
-            '@path',
-            'host',
-            'content-digest'
-        ]);
+        $signed = $this->signer->sign($headers, '("@method" "@path" "host" "content-digest")');
 
         echo "\n\nManual Inspection\n\n";
         var_dump($signed);
