@@ -3,6 +3,7 @@
 namespace HttpSignature;
 
 use Bakame\Http\StructuredFields\InnerList;
+use Bakame\Http\StructuredFields\Item;
 use Bakame\Http\StructuredFields\Parameters;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -255,37 +256,46 @@ class HttpMessageSigner
             foreach ($indices as $index) {
                 [$dictName, $members] = $sigInputDict->getByIndex($index);
                 if ($members instanceof InnerList) {
-                    $indices = $members->indices();
-                    foreach ($indices as $index) {
-                       $member = $members->getByIndex($index);
-                       $signatureComponents[] = $this->canonicalizeComponent($member, $headers);
+                    $innerIndices = $members->indices();
+                    foreach ($innerIndices as $innerIndex) {
+                       $member = $members->getByIndex($innerIndex);
+                       $signatureComponents[$dictName][] = $this->canonicalizeComponent($member, $headers);
                     }
                 }
             }
         }
 
         $sigDict = $this->parseStructuredDict($headers['signature']);
-
-        if (!isset($sigInputDict['sig1'], $sigDict['sig1'])) {
-            return false;
+        if ($sigDict->isNotEmpty()) {
+            $coveredStructuredFields = $sigInputDict->__toString();
+            $indices = $sigDict->indices();
+            foreach ($indices as $index) {
+                [$dictName, $members] = $sigDict->getByIndex($index);
+                if ($members instanceof Item) {
+                    $signatures[$dictName] = $members->value();
+                }
+                if ($members instanceof InnerList) {
+                    $innerIndices = $members->indices();
+                    foreach ($innerIndices as $innerIndex) {
+                        $signatures[$dictName][] = $members->getByIndex($innerIndex);
+                    }
+                }
+            }
         }
 
-        [$fieldsList, $params] = $sigInputDict['sig1'];
-        $coveredFields = array_map(fn($f) => trim($f, '"'), 
-                                        explode(' ', trim($fieldsList, '()')));
+        foreach ($signatureComponents as $dictName => $dictComponents) {
+            $namedSignatureComponents = $signatureComponents[$dictName];
+            $signatureParamsStr = $sigInputDict[$dictName]->toHttpValue();
+            $namedSignatureComponents[] = '"@signature-params": ' . $signatureParamsStr;
+            $signatureBase = implode("\n", $namedSignatureComponents);
+            if (!isset($sigDict[$dictName])) {
+                return false;
+            }
 
+            $decodedSig = base64_decode($sigDict[$dictName]);
 
-        $signatureParamsStr = "($fieldsList)";
-        foreach ($params as $k => $v) {
-            $v = is_string($v) ? '"'.$v.'"' : $v;
-            $signatureParamsStr .= ";$k=$v";
+            return $this->verifySignature($signatureBase, $decodedSig, $params['alg'] ?? $this->algorithm);
         }
-
-        $signatureComponents[] = '"@signature-params": '.$signatureParamsStr;
-        $signatureBase = implode("\n", $signatureComponents);
-        $decodedSig = base64_decode($sigDict['sig1']);
-
-        return $this->verifySignature($signatureBase, $decodedSig, $params['alg'] ?? $this->algorithm);
     }
 
     private function canonicalizeComponent($field, array $headers): string
