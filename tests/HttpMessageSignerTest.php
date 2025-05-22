@@ -33,13 +33,15 @@ final class HttpMessageSignerTest extends TestCase
     {
         $request = new Request(
             'POST',
-            'https://api.example.com/resource?bat=&baz=3',
+            'https://api.example.com/resource?bat&baz=3',
             [
                 'Host' => ['api.example.com'],
                 'Date' => [gmdate('D, d M Y H:i:s T')],
             ]
         );
-
+        /**
+         * Whenever we modify the $request, overwrite the HttpMessageSigner instance with an updated copy.
+         */
         $this->signer->setRequest($request);
         $signed = $this->signer->signRequest('("@method" "@path" "@request-target" "host" "date" "@query-param";name="baz")');
         $this->signer->setRequest($signed);
