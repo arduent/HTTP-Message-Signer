@@ -48,7 +48,7 @@ $signer = (new HttpMessageSigner($request, $response))
     ->setKeyId('test-key')
     ->setAlgorithm('rsa-sha256');
 
-$request = $signer->signRequest($psrRequest, '("@method", "@path", "host")');
+$request = $signer->signRequest($psrRequest, '("@method" "@path" "host")');
 $isValid = $this->signer->verifyRequest($request);
 ```
 
