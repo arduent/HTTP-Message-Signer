@@ -20,7 +20,8 @@ class HttpMessageSigner
     protected $response;
 
 
-    public function __construct(RequestInterface $request, ResponseInterface $response) {
+    public function __construct(RequestInterface $request, ResponseInterface $response)
+    {
         $this->request = $request;
         $this->response = $response;
         return $this;
@@ -170,10 +171,10 @@ class HttpMessageSigner
         /* check the body digest if it's present */
 
         if (isset($headers['content-digest'])) {
-            $body = (string) $request->getBody();
+            $body = (string)$request->getBody();
             if (!$this->isBodyDigestValid($body, $headers['content-digest'])) {
                 return false;
-            }   
+            }
         }
 
         return $this->verify($headers);
@@ -193,7 +194,7 @@ class HttpMessageSigner
         if (!preg_match('/sha-(.*?)=:(.*?):/', $headerValue, $matches)) {
             return false;
         }
-        if (! in_array($matches[1], ['256', '512'], true)) {
+        if (!in_array($matches[1], ['256', '512'], true)) {
             return false;
         }
 
@@ -203,6 +204,43 @@ class HttpMessageSigner
         $actualDigest = hash($algorithm, $body, true);
 
         return hash_equals($expectedDigest, $actualDigest);
+    }
+
+    /**
+     * @param array $headers
+     * @param string $coveredFields
+     *
+     * Can be used as a development function to peek into the internals of the exact things
+     * that were signed and/or test the internal results of data normalisation.
+     * This matches the sign() function except that it just returns the serialised string
+     * and does not sign it.
+     */
+    public function calculateSignatureBase(array $headers, string $coveredFields)
+    {
+        $signatureComponents = [];
+
+        $dict = $this->parseStructuredDict($coveredFields);
+
+        if ($dict->isNotEmpty()) {
+            $coveredStructuredFields = $dict->__toString();
+            $indices = $dict->indices();
+            foreach ($indices as $index) {
+                $member = $dict->getByIndex($index);
+                $signatureComponents[] = $this->canonicalizeComponent($member, $headers);
+            }
+        }
+
+        $signatureInput = $coveredStructuredFields . ';keyid="'
+            . $this->keyId . '";alg="' . $this->algorithm . '"';
+
+        /**
+         * Always include @signature-params in the result.
+         */
+        $signatureComponents[] = '"@signature-params": ' . $signatureInput;
+
+        $signatureBase = implode("\n", $signatureComponents);
+        return $signatureBase;
+
     }
 
     public function sign(array $headers, string $coveredFields): array
@@ -229,6 +267,7 @@ class HttpMessageSigner
         $signatureComponents[] = '"@signature-params": ' . $signatureInput;
 
         $signatureBase = implode("\n", $signatureComponents);
+
         $signature = $this->createSignature($signatureBase);
 
         $headers['signature-input'] = "sig1=$signatureInput";
