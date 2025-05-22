@@ -43,7 +43,7 @@ final class HttpMessageSignerTest extends TestCase
          * Whenever we modify the $request, overwrite the HttpMessageSigner instance with an updated copy.
          */
         $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest('("@method" "@path" "@request-target" "host" "date" "@query-param";name="baz")');
+        $signed = $this->signer->signRequest('("@method" "@path" "@request-target" "host" "date" "@query-param";name="baz" "@query-param";name="bat")');
         $this->signer->setRequest($signed);
         $this->assertTrue($signed->hasHeader('signature'));
         $this->assertTrue($signed->hasHeader('signature-input'));
