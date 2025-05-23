@@ -20,7 +20,10 @@ Supports:
 - HMAC-SHA256
 - PSR-7 requests (e.g., Guzzle)
 - Optionally (recommended) calculate and verify body digest (content-digest header)
-- includes basic parser
+
+Requirements:
+- bakame/http-structured-fields
+- psr/http-message
 
 ## Note
 
@@ -49,7 +52,7 @@ $signer = (new HttpMessageSigner($request, $response))
     ->setAlgorithm('rsa-sha256');
 
 $request = $signer->signRequest($psrRequest, '("@method" "@path" "host")');
-$isValid = $this->signer->verifyRequest($request);
+$isValid = $signer->verifyRequest($request);
 ```
 
 See full examples in `/tests`.
