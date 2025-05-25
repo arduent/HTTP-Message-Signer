@@ -5,7 +5,9 @@
   "require": {
     "php": "^8.1",
     "psr/http-message": "^1.0|^2.0",
-    "guzzlehttp/psr7": "^2.0"
+    "guzzlehttp/psr7": "^2.0",
+    "bakame/http-structured-fields": "^2.0",
+    "ext-openssl": "*"
   },
   "require-dev": {
     "phpunit/phpunit": "^10.0"

@@ -1,9 +1,9 @@
 <?php
-
 namespace HttpSignature\Tests;
 
 use PHPUnit\Framework\TestCase;
 use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Psr7\Response;
 use HttpSignature\HttpMessageSigner;
 use HttpSignature\Tests\Helpers\RawHttpBuilder;
 
@@ -18,28 +18,36 @@ final class HttpMessageSignerTest extends TestCase
         $this->privateKey = file_get_contents(__DIR__ . '/keys/private.pem');
         $this->publicKey = file_get_contents(__DIR__ . '/keys/public.pem');
 
-        $this->signer = new HttpMessageSigner(
-            keyId: 'test-key',
-            privateKey: $this->privateKey,
-            publicKey: $this->publicKey,
-            alg: 'rsa-sha256'
-        );
+        $request = new Request('GET', '/');
+        $response = new Response(200, ['Content-Type' => 'text/plain']);
+
+        $this->signer = (new HttpMessageSigner($request, $response))
+            ->setPrivateKey($this->privateKey)
+            ->setPublicKey($this->publicKey)
+            ->setKeyId('test-key')
+            ->setAlgorithm('rsa-sha256');
+
     }
 
     public function testSignsAndVerifiesValidRequest(): void
     {
         $request = new Request(
             'POST',
-            'https://api.example.com/resource',
+            'https://api.example.com/resource?bat&baz=3',
             [
                 'Host' => ['api.example.com'],
                 'Date' => [gmdate('D, d M Y H:i:s T')],
             ]
         );
-
-        $signed = $this->signer->signRequest($request, ['@method', '@path', 'host', 'date']);
+        /**
+         * Whenever we modify the $request, overwrite the HttpMessageSigner instance with an updated copy.
+         */
+        $this->signer->setRequest($request);
+        $signed = $this->signer->signRequest('("@method" "@path" "@request-target" "host" "date" "@query-param";name="baz" "@query-param";name="bat")');
+        $this->signer->setRequest($signed);
         $this->assertTrue($signed->hasHeader('signature'));
         $this->assertTrue($signed->hasHeader('signature-input'));
+
 
         $isValid = $this->signer->verifyRequest($signed);
         $this->assertTrue($isValid, 'Signed request should be valid');
@@ -56,8 +64,10 @@ final class HttpMessageSignerTest extends TestCase
             ['Host' => ['example.com'], 'Content-Digest' => [$digest]],
             $body
         );
-    
-        $signed = $this->signer->signRequest($request, ['@method', '@path', 'host', 'content-digest']);
+
+        $this->signer->setRequest($request);
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")');
+        $this->signer->setRequest($signed);
         $this->assertTrue($this->signer->verifyRequest($signed));
     }
 
@@ -76,9 +86,10 @@ final class HttpMessageSignerTest extends TestCase
             $tamperedBody
         );
 
-        $signed = $this->signer->signRequest($request, ['@method', '@path', 'host', 'content-digest']);
-        $this->assertFalse($this->signer->verifyRequest($signed), 
-                                'Digest mismatch should cause verification to fail');
+        $this->signer->setRequest($request);
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")');
+        $this->assertFalse($this->signer->verifyRequest($signed),
+                'Digest mismatch should cause verification to fail');
     }
 
 
@@ -93,9 +104,11 @@ final class HttpMessageSignerTest extends TestCase
             ]
         );
 
-        $signed = $this->signer->signRequest($request, 
-                                                ['@method', '@path', 'host', 'date']);
+        $this->signer->setRequest($request);
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "date")');
+        $this->signer->setRequest($signed);
         $tampered = $signed->withHeader('Host', 'attacker.com');
+        $this->signer->setRequest($tampered);
 
         $this->assertFalse($this->signer->verifyRequest($tampered), 
                                 'Tampered request should be invalid');
@@ -112,6 +125,7 @@ final class HttpMessageSignerTest extends TestCase
             ]
         );
 
+        $this->signer->setRequest($request);
         $this->assertFalse($this->signer->verifyRequest($request),
                                 'Unsigned request should be invalid');
     }
@@ -154,10 +168,10 @@ final class HttpMessageSignerTest extends TestCase
             '{"message":"hello"}'
         );
 
+        $this->signer->setRequest($request);
         $digest = $this->signer->createContentDigestHeader((string) $request->getBody());
         $request = $request->withHeader('Content-Digest', $digest);
-
-        $request = $this->signer->signRequest($request, ['@method', '@path', 'host', 'date', 'content-digest']);
+        $request = $this->signer->signRequest('("@method" "@path" "host" "date" "content-digest")');
 
         echo "\n\nManual Inspection\n\n";
 
@@ -189,12 +203,7 @@ final class HttpMessageSignerTest extends TestCase
 
         $headers['content-digest'] = $this->signer->createContentDigestHeader($body);
 
-        $signed = $this->signer->sign($headers, $method, $path, [
-            '@method',
-            '@path',
-            'host',
-            'content-digest'
-        ]);
+        $signed = $this->signer->sign($headers, '("@method" "@path" "host" "content-digest")');
 
         echo "\n\nManual Inspection\n\n";
         var_dump($signed);
@@ -202,7 +211,7 @@ final class HttpMessageSignerTest extends TestCase
         $this->assertArrayHasKey('signature', $signed);
         $this->assertArrayHasKey('signature-input', $signed);
 
-        $isValid = $this->signer->verify($signed, $method, $path);
+        $isValid = $this->signer->verify($signed);
 
         $this->assertTrue($isValid, 'Signed and parsed raw message should verify');
     }

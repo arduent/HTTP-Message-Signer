@@ -2,43 +2,164 @@
 
 namespace HttpSignature;
 
+use Bakame\Http\StructuredFields\InnerList;
+use Bakame\Http\StructuredFields\Item;
+use Bakame\Http\StructuredFields\Parameters;
 use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
+use Bakame\Http\StructuredFields\Dictionary;
 
 class HttpMessageSigner
 {
-    public function __construct(
-        private string $keyId,
-        private string $privateKey,
-        private ?string $publicKey = null,
-        private string $alg = 'rsa-sha256'        // default
-    ) {}
+    private string $keyId;
+    private string $privateKey;
+    private string $publicKey;
+    private string $algorithm;
 
-    /* PSR-7 inteface to signing function (use sign() below for non-PSR-7 reqs) */
+    protected $request;
+    protected $response;
 
-    public function signRequest(RequestInterface $request, 
-                                 array $coveredFields): RequestInterface
+
+    public function __construct(RequestInterface $request, ResponseInterface $response)
+    {
+        $this->request = $request;
+        $this->response = $response;
+        return $this;
+    }
+
+    /**
+     * @return RequestInterface
+     */
+    public function getRequest(): RequestInterface
+    {
+        return $this->request;
+    }
+
+    /**
+     * @param RequestInterface $request
+     * @return HttpMessageSigner
+     */
+    public function setRequest(RequestInterface $request): HttpMessageSigner
+    {
+        $this->request = $request;
+        return $this;
+    }
+
+    /**
+     * @return ResponseInterface
+     */
+    public function getResponse(): ResponseInterface
+    {
+        return $this->response;
+    }
+
+    /**
+     * @param ResponseInterface $response
+     * @return HttpMessageSigner
+     */
+    public function setResponse(ResponseInterface $response): HttpMessageSigner
+    {
+        $this->response = $response;
+        return $this;
+    }
+
+
+    /**
+     * @return string
+     */
+    public function getKeyId(): string
+    {
+        return $this->keyId;
+    }
+
+    /**
+     * @param string $keyId
+     * @return HttpMessageSigner
+     */
+    public function setKeyId(string $keyId): HttpMessageSigner
+    {
+        $this->keyId = $keyId;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getPrivateKey(): string
+    {
+        return $this->privateKey;
+    }
+
+    /**
+     * @param string $privateKey
+     * @return HttpMessageSigner
+     */
+    public function setPrivateKey(string $privateKey): HttpMessageSigner
+    {
+        $this->privateKey = $privateKey;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getPublicKey(): string
+    {
+        return $this->publicKey;
+    }
+
+    /**
+     * @param string $publicKey
+     * @return HttpMessageSigner
+     */
+    public function setPublicKey(string $publicKey): HttpMessageSigner
+    {
+        $this->publicKey = $publicKey;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getAlgorithm(): string
+    {
+        return $this->algorithm;
+    }
+
+    /**
+     * @param string $algorithm
+     * @return HttpMessageSigner
+     */
+    public function setAlgorithm(string $algorithm): HttpMessageSigner
+    {
+        $this->algorithm = $algorithm;
+        return $this;
+    }
+
+    /* PSR-7 interface to signing function */
+
+    public function signRequest(string $coveredFields): RequestInterface
     {
         $headers = [];
-        foreach ($request->getHeaders() as $name => $values) {
+
+        foreach ($this->request->getHeaders() as $name => $values) {
             $headers[strtolower($name)] = implode(', ', $values);
         }
 
         $signedHeaders = $this->sign(
             $headers,
-            $request->getMethod(),
-            $request->getUri()->getPath(),
             $coveredFields
         );
 
         foreach (['signature-input', 'signature'] as $header) {
-            $request = $request->withHeader($header, $signedHeaders[$header]);
+            $request = $this->request->withHeader($header, $signedHeaders[$header]);
+            $this->setRequest($request);
         }
 
         return $request;
     }
 
-    /* PSR-7 verify interface and also check body digest if included 
-        use verify() for non PSR-7 reqs */
+    /* PSR-7 verify interface and also check body digest if included */
 
     public function verifyRequest(RequestInterface $request): bool
     {
@@ -50,53 +171,103 @@ class HttpMessageSigner
         /* check the body digest if it's present */
 
         if (isset($headers['content-digest'])) {
-            $body = (string) $request->getBody();
+            $body = (string)$request->getBody();
             if (!$this->isBodyDigestValid($body, $headers['content-digest'])) {
                 return false;
-            }   
+            }
         }
 
-        return $this->verify(
-            $headers,
-            $request->getMethod(),
-            $request->getUri()->getPath()
-        );
+        return $this->verify($headers);
     }
 
-    /* check body digest */
+    /**
+     * check body digest
+     *
+     * From https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Digest
+     * The algorithm used to create a digest of the message content. Only two registered digest algorithms are
+     * considered secure: sha-512 and sha-256. The insecure (legacy) registered digest algorithms
+     * are: md5, sha (SHA-1), unixsum, unixcksum, adler (ADLER32) and crc32c.
+     */
 
     private function isBodyDigestValid(string $body, string $headerValue): bool
     {
-        if (!preg_match('/sha-256=:(.*?):/', $headerValue, $matches)) {
+        if (!preg_match('/sha-(.*?)=:(.*?):/', $headerValue, $matches)) {
+            return false;
+        }
+        if (!in_array($matches[1], ['256', '512'], true)) {
             return false;
         }
 
-        $expectedDigest = base64_decode($matches[1]);
-        $actualDigest = hash('sha256', $body, true);
+        $algorithm = 'sha' . $matches[1];
+
+        $expectedDigest = base64_decode($matches[2]);
+        $actualDigest = hash($algorithm, $body, true);
 
         return hash_equals($expectedDigest, $actualDigest);
     }
 
-    /* non-PSR-7 sign function, header names are made lowercase */
-
-    public function sign(array $headers, string $method, string $path, 
-                                array $coveredFields): array
+    /**
+     * @param array $headers
+     * @param string $coveredFields
+     *
+     * Can be used as a development function to peek into the internals of the exact things
+     * that were signed and/or test the internal results of data normalisation.
+     * This matches the sign() function except that it just returns the serialised string
+     * and does not sign it.
+     */
+    public function calculateSignatureBase(array $headers, string $coveredFields)
     {
-        $coveredFields = array_map('strtolower', $coveredFields);
         $signatureComponents = [];
 
-        foreach ($coveredFields as $field) {
-            $signatureComponents[] = $this->canonicalizeComponent($field, $headers, 
-                                                                   $method, $path);
+        $dict = $this->parseStructuredDict($coveredFields);
+
+        if ($dict->isNotEmpty()) {
+            $coveredStructuredFields = $dict->__toString();
+            $indices = $dict->indices();
+            foreach ($indices as $index) {
+                $member = $dict->getByIndex($index);
+                $signatureComponents[] = $this->canonicalizeComponent($member, $headers);
+            }
         }
 
-        $paramList = implode(' ', array_map(fn($f) => '"'.$f.'"', $coveredFields));
-        $signatureInput = '('.$paramList.');keyid="'.
-                                $this->keyId.'";alg="'.$this->alg.'"';
+        $signatureInput = $coveredStructuredFields . ';keyid="'
+            . $this->keyId . '";alg="' . $this->algorithm . '"';
 
-        $signatureComponents[] = '"@signature-params": '.$signatureInput;
+        /**
+         * Always include @signature-params in the result.
+         */
+        $signatureComponents[] = '"@signature-params": ' . $signatureInput;
 
         $signatureBase = implode("\n", $signatureComponents);
+        return $signatureBase;
+
+    }
+
+    public function sign(array $headers, string $coveredFields): array
+    {
+        $signatureComponents = [];
+
+        $dict = $this->parseStructuredDict($coveredFields);
+
+        if ($dict->isNotEmpty()) {
+            $coveredStructuredFields = $dict->__toString();
+            $indices = $dict->indices();
+            foreach ($indices as $index) {
+                $member = $dict->getByIndex($index);
+                $signatureComponents[] = $this->canonicalizeComponent($member, $headers);
+            }
+        }
+
+        $signatureInput = $coveredStructuredFields . ';keyid="'
+                . $this->keyId . '";alg="' . $this->algorithm . '"';
+
+        /**
+         * Always include @signature-params in the result.
+         */
+        $signatureComponents[] = '"@signature-params": ' . $signatureInput;
+
+        $signatureBase = implode("\n", $signatureComponents);
+
         $signature = $this->createSignature($signatureBase);
 
         $headers['signature-input'] = "sig1=$signatureInput";
@@ -105,56 +276,182 @@ class HttpMessageSigner
         return $headers;
     }
 
-    /* non-PSR-7 verify() note: does not check body digest, 
-        use verifyRequest if needed or calculate digest using helper functions, below
-    */
-
-    public function verify(array $headers, string $method, string $path): bool
+    public function verify(array $headers): bool
     {
         if (!isset($headers['signature-input'], $headers['signature'])) {
             return false;
         }
+        $headers[] = 'signature-params';
 
         $sigInputDict = $this->parseStructuredDict($headers['signature-input']);
-        $sigDict = $this->parseStructuredDict($headers['signature']);
-
-        if (!isset($sigInputDict['sig1'], $sigDict['sig1'])) {
-            return false;
-        }
-
-        [$fieldsList, $params] = $sigInputDict['sig1'];
-        $coveredFields = array_map(fn($f) => trim($f, '"'), 
-                                        explode(' ', trim($fieldsList, '()')));
 
         $signatureComponents = [];
 
-        foreach ($coveredFields as $field) {
-            $signatureComponents[] = $this->canonicalizeComponent($field, $headers, 
-                                                                        $method, $path);
+        if ($sigInputDict->isNotEmpty()) {
+            $coveredStructuredFields = $sigInputDict->__toString();
+            $indices = $sigInputDict->indices();
+            foreach ($indices as $index) {
+                [$dictName, $members] = $sigInputDict->getByIndex($index);
+                if ($members instanceof InnerList) {
+                    $innerIndices = $members->indices();
+                    foreach ($innerIndices as $innerIndex) {
+                       $member = $members->getByIndex($innerIndex);
+                       $signatureComponents[$dictName][] = $this->canonicalizeComponent($member, $headers);
+                    }
+                }
+            }
         }
 
-        $signatureParamsStr = "($fieldsList)";
-        foreach ($params as $k => $v) {
-            $v = is_string($v) ? '"'.$v.'"' : $v;
-            $signatureParamsStr .= ";$k=$v";
+        $sigDict = $this->parseStructuredDict($headers['signature']);
+        if ($sigDict->isNotEmpty()) {
+            $coveredStructuredFields = $sigInputDict->__toString();
+            $indices = $sigDict->indices();
+            foreach ($indices as $index) {
+                [$dictName, $members] = $sigDict->getByIndex($index);
+                if ($members instanceof Item) {
+                    $signatures[$dictName] = $members->value();
+                }
+                if ($members instanceof InnerList) {
+                    $innerIndices = $members->indices();
+                    foreach ($innerIndices as $innerIndex) {
+                        $signatures[$dictName][] = $members->getByIndex($innerIndex);
+                    }
+                }
+            }
         }
 
-        $signatureComponents[] = '"@signature-params": '.$signatureParamsStr;
-        $signatureBase = implode("\n", $signatureComponents);
-        $decodedSig = base64_decode($sigDict['sig1']);
+        foreach ($signatureComponents as $dictName => $dictComponents) {
+            $namedSignatureComponents = $signatureComponents[$dictName];
+            $signatureParamsStr = $sigInputDict[$dictName]->toHttpValue();
+            $namedSignatureComponents[] = '"@signature-params": ' . $signatureParamsStr;
+            $signatureBase = implode("\n", $namedSignatureComponents);
+            if (!isset($sigDict[$dictName])) {
+                return false;
+            }
 
-        return $this->verifySignature($signatureBase, $decodedSig, $params['alg'] ?? $this->alg);
+            $decodedSig = base64_decode($sigDict[$dictName]);
+
+            return $this->verifySignature($signatureBase, $decodedSig, $params['alg'] ?? $this->algorithm);
+        }
+        return false;
     }
 
-    private function canonicalizeComponent(string $field, array $headers, 
-                                            string $method, string $path): string
+    private function canonicalizeComponent($field, array $headers): string
     {
-        return match ($field) {
-            '@method' => '"@method": ' . strtolower($method),
-            '@path' => '"@path": '.$path,
-            default => '"'.$field.'": '.$this->normalizeHeader($headers[$field] ?? ''),
+        $fieldName = $field->value();
+        $fieldParams = $field->parameters();
+
+
+        $fieldValue = match ($fieldName) {
+            '@signature-params' => '',
+            '@method' => '"@method": ' . strtoupper($this->request->getMethod()),
+            '@authority' => '"@authority": ' . $this->request->getUri()->getAuthority(),
+            '@scheme' => '"@scheme": ' . strtoupper($this->request->getUri()->getScheme()),
+            '@target-uri' => '"@target-uri": ' . $this->request->getUri(), // ?? verify
+            '@request-target' => '"@request-target": ' . $this->request->getUri(), // ?? verify
+            '@path' => '"@path": ' . $this->request->getUri()->getPath(),
+            '@query' => '"@query": ' . $this->request->getUri()->getQuery(),
+            '@query-param' => $this->getQueryParam($fieldParams) ?? '',
+            '@status' => '"@status": ' . $this->response->getStatusCode(),
+            default => '"' . $field . '": ' . $this->normalizeHeader($headers[$fieldName] ?? ''),
+        };
+        return $fieldValue;
+    }
+
+
+    /**
+     * @param string $query
+     * @return array|null
+     *
+     * Should not use PHP's parse_str function here, as it has some issues with
+     * spaces and dots in parameter names. These are unlikely to occur, but the
+     * following function treats them as opaque strings rather than as variable
+     * names.
+     */
+    private function parseQueryString(string $query): array|null
+    {
+        $result = [];
+
+        if (!isset($query)) {
+            return null;
+        }
+
+        $queryParams = explode('&', $query);
+        foreach ($queryParams as $param) {
+            // The '=' character is not required and indicates a boolean true value if unset.
+            $element = explode('=', $param, 2);
+            $result[urldecode($element[0])] = isset($element[1]) ? urldecode($element[1]) : '';
+        }
+        return $result;
+    }
+
+    /**
+     * @param $params
+     * @param $name
+     * @return string|null
+     *
+     * Find one query parameter by name (which must supplied as parameters in the (structured) covered field list).
+     */
+    private function getQueryParam(Parameters $params, $name = 'name'): string|null
+    {
+        $queryString = $this->request->getUri()->getQuery();
+        $queryParams = [];
+        if ($queryString) {
+            $queryParams = $this->parseQueryString($queryString);
+            if ($params->isNotEmpty()) {
+                $index = $params->indexByKey('name');
+                [ $name, $item ] = $params->getByIndex($index);
+                $fieldName = $item->value();
+                return '"_' . $fieldName . '_": "' . ($queryParams[$fieldName] ?? '') . '"';
+
+            }
+        }
+        return null;
+    }
+
+    private function applyRule(string $fieldValue, string $param): string
+    {
+
+        return match ($param) {
+            'sf' => $this->applyStructuredField($fieldValue),
+            'key' => $this->applySingleKeyValue($fieldValue),
+            'bs' => $this->applyByteSequence($fieldValue),
+            'tr' => $this->applyTrailer($fieldValue),
+            'req' => $this->applyRelatedRequest($fieldValue),
+            'name' => $this->applySingleNamedQueryParameter($fieldValue),
+            default => $fieldValue,
         };
     }
+
+    private function applyStructuredField(string $fieldValue): string
+    {
+        $field = Dictionary::fromHttpValue($fieldValue);
+        return $field->toHttpValue();
+    }
+
+    private function applySingleKeyValue(string $fieldValue): string
+    {
+        return $fieldValue;
+    }
+
+    private function applyByteSequence(string $fieldValue): string
+    {
+        return $fieldValue;
+    }
+
+    private function applyTrailer(string $fieldValue): string
+    {
+        return $fieldValue;
+    }
+    private function applyRelatedRequest(string $fieldValue): string
+    {
+        return $fieldValue;
+    }
+    private function applySingleNamedQueryParameter(string $fieldValue): string
+    {
+        return $fieldValue;
+    }
+
 
     private function normalizeHeader(string $value): string
     {
@@ -163,11 +460,11 @@ class HttpMessageSigner
 
     private function createSignature(string $data): string
     {
-        return match ($this->alg) {
+        return match ($this->algorithm) {
             'rsa-sha256' => $this->rsaSign($data),
             'ed25519' => $this->ed25519Sign($data),
             'hmac-sha256' => base64_encode(hash_hmac('sha256', $data, $this->privateKey, true)),
-            default => throw new \RuntimeException("Unsupported algorithm: $this->alg")
+            default => throw new \RuntimeException("Unsupported algorithm: $this->algorithm")
         };
     }
 
@@ -205,38 +502,23 @@ class HttpMessageSigner
 
     /* parse a structed dict */
 
-    private function parseStructuredDict(string $headerValue): array
+    private function parseStructuredDict(string $headerValue)
     {
-        $result = [];
-        $parts = explode(',', $headerValue);
-        foreach ($parts as $part) {
-            if (preg_match('/\s*(\w+)=\(([^)]*)\)((;.*)*)/', $part, $matches)) {
-                $label = trim($matches[1]);
-                $fields = $matches[2];
-                $paramStr = trim($matches[3] ?? '');
-                $params = [];
-
-                if ($paramStr) {
-                    preg_match_all('/;([^=]+)=(".*?"|\d+|\w+)/', $paramStr, 
-                                        $paramMatches, PREG_SET_ORDER);
-                    foreach ($paramMatches as $pm) {
-                        $k = $pm[1];
-                        $v = $pm[2];
-                        $params[$k] = str_starts_with($v, '"') ? trim($v, '"') : $v;
-                    }
-                }
-
-                $result[$label] = [$fields, $params];
-            } elseif (preg_match('/\s*(\w+)=:([^:]+):/', $part, $matches)) {
-                $result[trim($matches[1])] = $matches[2];
-            }
+        /**
+         * Work in progress. This first section is an attempt to replace the following
+         * manual parser with a structured parser built on bakame/http-structured-fields
+         */
+        if (str_starts_with(trim($headerValue), '(')) {
+            return InnerList::fromHttpValue($headerValue);
         }
-        return $result;
+        else {
+            return Dictionary::fromHttpValue($headerValue);
+        }
     }
 
     /* Recommended to calculate the digest of the body and add it to 
-        covered headers and sign, but not required. Covenience function 
-        to calculate the digest.. 
+        covered headers and sign, but not required. Convenience function
+        to calculate the digest.
 
         ex:
 
@@ -244,10 +526,34 @@ class HttpMessageSigner
         $request = $request->withHeader('Content-Digest', $digest);
     */
 
-    public function createContentDigestHeader(string $body): string
+    /**
+     * @param string $body
+     * @param $algorithm ('sha256' || 'sha512')
+     * @return string
+     *
+     * From https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Digest
+     * The algorithm used to create a digest of the message content. Only two registered digest algorithms are
+     * considered secure: sha-512 and sha-256. The insecure (legacy) registered digest algorithms
+     * are: md5, sha (SHA-1), unixsum, unixcksum, adler (ADLER32) and crc32c.
+     */
+
+    public function createContentDigestHeader(string $body, $algorithm = 'sha256'): string
     {
-        $digest = hash('sha256', $body, true);
-        return 'sha-256=:'.base64_encode($digest).':';
+        $supportedAlgorithms = ['sha256' => 'sha-256', 'sha512' => 'sha-512'];
+        foreach ($supportedAlgorithms as $alg => $value) {
+            if ($alg === $algorithm) {
+                $algorithmHeaderString = $value;
+                break;
+            }
+        }
+        if (!isset($algorithmHeaderString)) {
+            throw new \RuntimeException("Unsupported algorithm: $algorithm");
+        }
+        $digest = hash($algorithm, $body, true);
+        /**
+         * Output as structured field.
+         */
+        return $algorithmHeaderString . '=:' . base64_encode($digest) . ':';
     }
 
     /* Convenience function, probably want to use a robust PSR7 solution instead */
