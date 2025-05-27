@@ -4,8 +4,7 @@ This is a fork of quantificant/http-message-signer ( https://github.com/arduent/
 
 It is currently a work in progress and possibly unstable (19-May-2025). What we're doing is extending the original work to more fully cover the expected behaviours of the base specification, as there are very few implementations of RFC9421 in php and as far as I'm aware at the moment, they are all woefully incomplete. The first step was to use a complete and tested structured HTTP header parser and require a PSR-7 request interface (which was optional in the original implementation). Then I've started supporting the full range of '@' derived components, and the associated named parameters which were also lacking. 
 
-If you would like to help with this effort, a fediverse group has been created at
-https://fediversity.site/channel/rfc9421 (rfc9421@fediversity.site)
+If you would like to help with this effort, a fediverse group has been created at `rfc9421@fediversity.site`.
 
 and a repository at https://codeberg.org/streams/http-sig9421
 
@@ -29,7 +28,9 @@ Requirements:
 
 This is Alpha version please report issues. Thanks. Tested on PHP 8.4, should run fine on 8.1+
 
-Update to dev branch 2025-05-22: constructor has changed and "covered components" is now an HTTP structured InnerList (string) rather than an array of fields. You MUST provide a parseable/valid Innerlist element. RFC9421 is very opinionated, and signature failures are likely to be due to parsing incorrectly specified structured fields. You might want to wrap the sign and verify functionality in try/catch blocks and investigate all failures prior to releasing into production. 
+Update to dev branch 2025-05-22: constructor has changed and "covered components" is now an HTTP structured InnerList (string) rather than an array of fields. You MUST provide a parseable/valid Innerlist element. RFC9421 is very opinionated, and signature failures are likely to be due to parsing incorrectly specified structured fields. You might want to wrap the sign and verify functionality in try/catch blocks and investigate all failures prior to releasing into production.
+
+The signRequest() and verifyRequest() methods take an instance of MessageInterface as their first parameter. In nearly all cases, this will be the RequestInterface. If you are signing responses, the default will be the ResponseInterface, and if you require components from the RequestInterface, the :req parameter must be added to the field definition. If you are only signing/verifying requests and not responses, the ResponseInterface is not required and may be omitted.
 
 ## Installation
 
@@ -51,7 +52,7 @@ $signer = (new HttpMessageSigner($request, $response))
     ->setKeyId('test-key')
     ->setAlgorithm('rsa-sha256');
 
-$request = $signer->signRequest($psrRequest, '("@method" "@path" "host")');
+$request = $signer->signRequest('("@method" "@path" "host")', $request);
 $isValid = $signer->verifyRequest($request);
 ```
 

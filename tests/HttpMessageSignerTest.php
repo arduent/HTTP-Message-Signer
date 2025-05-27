@@ -37,16 +37,20 @@ final class HttpMessageSignerTest extends TestCase
             [
                 'Host' => ['api.example.com'],
                 'Date' => [gmdate('D, d M Y H:i:s T')],
+                'x-test' => [''],
             ]
         );
         /**
          * Whenever we modify the $request, overwrite the HttpMessageSigner instance with an updated copy.
          */
-        $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest('("@method" "@path" "@request-target" "host" "date" "@query-param";name="baz" "@query-param";name="bat")');
-        $this->signer->setRequest($signed);
+        $coveredFields = '("@method" "@path" "@request-target" "host" "date" "x-test";sf "@target-uri" "@query-param";name="baz" "@query-param";name="bat")';
+        $this->signer->setInterface($request);
+        $signed = $this->signer->signRequest($coveredFields, $request);
+        $this->signer->setInterface($signed);
         $this->assertTrue($signed->hasHeader('signature'));
         $this->assertTrue($signed->hasHeader('signature-input'));
+        $normalised = explode("\n", $this->signer->calculateSignatureBase($this->signer->getHeaders(), $coveredFields));
+        $this->assertEquals($request->getRequestTarget(), '/resource?bat&baz=3');
 
 
         $isValid = $this->signer->verifyRequest($signed);
@@ -65,9 +69,9 @@ final class HttpMessageSignerTest extends TestCase
             $body
         );
 
-        $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")');
-        $this->signer->setRequest($signed);
+        $this->signer->setInterface($request);
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")', $request);
+        $this->signer->setInterface($signed);
         $this->assertTrue($this->signer->verifyRequest($signed));
     }
 
@@ -86,8 +90,8 @@ final class HttpMessageSignerTest extends TestCase
             $tamperedBody
         );
 
-        $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")');
+        $this->signer->setInterface($request);
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")', $request);
         $this->assertFalse($this->signer->verifyRequest($signed),
                 'Digest mismatch should cause verification to fail');
     }
@@ -104,11 +108,11 @@ final class HttpMessageSignerTest extends TestCase
             ]
         );
 
-        $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest('("@method" "@path" "host" "date")');
-        $this->signer->setRequest($signed);
+        $this->signer->setInterface($request);
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "date")', $request);
+        $this->signer->setInterface($signed);
         $tampered = $signed->withHeader('Host', 'attacker.com');
-        $this->signer->setRequest($tampered);
+        $this->signer->setInterface($tampered);
 
         $this->assertFalse($this->signer->verifyRequest($tampered), 
                                 'Tampered request should be invalid');
@@ -125,7 +129,7 @@ final class HttpMessageSignerTest extends TestCase
             ]
         );
 
-        $this->signer->setRequest($request);
+        $this->signer->setInterface($request);
         $this->assertFalse($this->signer->verifyRequest($request),
                                 'Unsigned request should be invalid');
     }
@@ -168,10 +172,10 @@ final class HttpMessageSignerTest extends TestCase
             '{"message":"hello"}'
         );
 
-        $this->signer->setRequest($request);
+        $this->signer->setInterface($request);
         $digest = $this->signer->createContentDigestHeader((string) $request->getBody());
         $request = $request->withHeader('Content-Digest', $digest);
-        $request = $this->signer->signRequest('("@method" "@path" "host" "date" "content-digest")');
+        $request = $this->signer->signRequest('("@method" "@path" "host" "date" "content-digest")', $request);
 
         echo "\n\nManual Inspection\n\n";
 
