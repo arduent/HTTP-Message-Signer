@@ -50,8 +50,8 @@ $request = new Request(
 );
 
 $signer = (new HttpMessageSigner())
-    ->setPrivateKey($privateKey)
-    ->setPublicKey($publicKey)
+    ->setPrivateKey($privateKey) // only needed for signing
+    ->setPublicKey($publicKey)   // only needed for verifying
     ->setKeyId('test-key')
     ->setAlgorithm('rsa-sha256');
 
@@ -65,20 +65,28 @@ See full examples in `/tests`.
 
 RFC9421 makes heavy use of HTTP Structured Fields (RFC8941/RFC9651). The syntax is very precise and unforgiving.
 
-The signRequest() method takes a structured InnerList of components to sign. These may be headers or derived fields. 
+The signRequest() method takes a structured InnerList of components to sign. These may be headers or derived fields.
+The string will look something like the following (where `...` represents additional components):
 
-Using the 'sf' parameter on a component will treat it as a Structured Field when normalising the string. 
+'("header1" "header2" "@method" ...)'
 
-However, parsing Structured Fields is likely to fail unless you know what `type` it is. This library has no current knowledge of all the header fields which could potentially be structured. So there are two methods available -- setStructuredFieldTypes() and addStructuredFieldTypes(). These take an array with key of the lowercase header name and a value which is one of 'list', 'innerlist', 'parameters, 'dictionary', 'item'. If the header name is in the list and the 'sf' modifier is used, the header will be parsed as the Structured Field type indicated.  
+and may include modifiers. These are represented as
 
+'("header1";name="foo" "header2":sf "header3" ...)'
 
-The signRequest() and verifyRequest() methods both use an instance of MessageInterface. In nearly all cases, this will be the RequestInterface. When signing responses, the default will be the ResponseInterface, and if components are required from the RequestInterface, the :req parameter must be added to the field definition. 
-
-To sign or verify a Response, use a ResponseInterface as the `$interface`, and provide the RequestInterface in `$originalRequest`. This will allow the `req` modifier to work correctly.
-
-
+Parameters beginning with '@' are components derived from the HTTP request but may not be represented in the headers. Please review RFC9421 for precise definitions. 
 
 
+Using the 'sf' parameter on a component will treat a signature component as a Structured Field when normalising the string. 
+
+However, parsing Structured Fields by adding the 'sf' parameter is likely to fail unless you know what `type` it is. This library has no current knowledge of all the header fields which could potentially be structured. So there are two methods available -- setStructuredFieldTypes() and addStructuredFieldTypes(). These take an array with key of the lowercase header name and a value which is one of 'list', 'innerlist', 'parameters, 'dictionary', 'item'. If the header name is in the list and the 'sf' modifier is used, the header will be parsed as the Structured Field type indicated.
+
+Future enhancements to this library would provide a base dictionary or catalog which correctly identifies common HTTP fields that are already known to be structured. These aren't very common currently, but signatures will fail for any field modified by 'sf' and whose type is unknown. 
+
+
+The signRequest() and verifyRequest() methods both use an instance of MessageInterface. In nearly all cases, this will be the RequestInterface. However, when signing responses, the default will be the ResponseInterface, and if components are required from the RequestInterface, the :req parameter must be added to the field definition. 
+
+To sign or verify an HTTP Response, use a ResponseInterface as the provided `$interface`, and provide the RequestInterface in `$originalRequest`. This is optional will allow the `req` modifier to work correctly when signing Responses.
 
 ## License
 
