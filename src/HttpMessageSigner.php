@@ -146,6 +146,9 @@ class HttpMessageSigner
     public function signRequest(string $coveredFields, MessageInterface $interface, RequestInterface $originalRequest = null): MessageInterface
     {
         $headers = $this->getHeaders($interface);
+        if ($originalRequest) {
+            $this->setOriginalRequest($originalRequest);
+        }
 
         $signedHeaders = $this->sign(
             $headers,
@@ -161,9 +164,12 @@ class HttpMessageSigner
 
     /* PSR-7 verify interface and also check body digest if included */
 
-    public function verifyRequest(MessageInterface $interface): bool
+    public function verifyRequest(MessageInterface $interface, RequestInterface $originalRequest = null): bool
     {
         $headers = [];
+        if ($originalRequest) {
+            $this->setOriginalRequest($originalRequest);
+        }
         foreach ($interface->getHeaders() as $name => $values) {
             $headers[strtolower($name)] = implode(', ', $values);
         }
