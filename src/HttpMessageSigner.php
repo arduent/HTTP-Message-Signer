@@ -4,7 +4,9 @@ namespace HttpSignature;
 
 use Bakame\Http\StructuredFields\InnerList;
 use Bakame\Http\StructuredFields\Item;
+use Bakame\Http\StructuredFields\OuterList;
 use Bakame\Http\StructuredFields\Parameters;
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Bakame\Http\StructuredFields\Dictionary;
@@ -15,54 +17,29 @@ class HttpMessageSigner
     private string $privateKey;
     private string $publicKey;
     private string $algorithm;
+    private string $signatureId = 'sig1';
+    private array $structuredFieldTypes = [];
 
-    protected $request;
-    protected $response;
+    private $originalRequest;
 
 
-    public function __construct(RequestInterface $request, ResponseInterface $response)
+    public function __construct()
     {
-        $this->request = $request;
-        $this->response = $response;
         return $this;
     }
 
-    /**
-     * @return RequestInterface
-     */
-    public function getRequest(): RequestInterface
-    {
-        return $this->request;
-    }
+
+
+
+
 
     /**
-     * @param RequestInterface $request
-     * @return HttpMessageSigner
+     * This sets which of [$request, $response] is the signing interface
+     * By default it is $request.
+     *
+     * @param MessageInterface $interface
+     * @return $this
      */
-    public function setRequest(RequestInterface $request): HttpMessageSigner
-    {
-        $this->request = $request;
-        return $this;
-    }
-
-    /**
-     * @return ResponseInterface
-     */
-    public function getResponse(): ResponseInterface
-    {
-        return $this->response;
-    }
-
-    /**
-     * @param ResponseInterface $response
-     * @return HttpMessageSigner
-     */
-    public function setResponse(ResponseInterface $response): HttpMessageSigner
-    {
-        $this->response = $response;
-        return $this;
-    }
-
 
     /**
      * @return string
@@ -136,48 +113,77 @@ class HttpMessageSigner
         return $this;
     }
 
-    /* PSR-7 interface to signing function */
+    /**
+     * @return string
+     */
+    public function getSignatureId(): string
+    {
+        return $this->signatureId;
+    }
 
-    public function signRequest(string $coveredFields): RequestInterface
+    /**
+     * @param string $signatureId
+     * @return HttpMessageSigner
+     */
+    public function setSignatureId(string $signatureId): HttpMessageSigner
+    {
+        $this->signatureId = $signatureId;
+        return $this;
+    }
+
+    public function getHeaders($interface): array
     {
         $headers = [];
-
-        foreach ($this->request->getHeaders() as $name => $values) {
+        foreach ($interface->getHeaders() as $name => $values) {
             $headers[strtolower($name)] = implode(', ', $values);
+        }
+        return $headers;
+    }
+
+
+    /* PSR-7 interface to signing function */
+
+    public function signRequest(string $coveredFields, MessageInterface $interface, RequestInterface $originalRequest = null): MessageInterface
+    {
+        $headers = $this->getHeaders($interface);
+        if ($originalRequest) {
+            $this->setOriginalRequest($originalRequest);
         }
 
         $signedHeaders = $this->sign(
             $headers,
-            $coveredFields
+            $coveredFields,
+            $interface
         );
 
         foreach (['signature-input', 'signature'] as $header) {
-            $request = $this->request->withHeader($header, $signedHeaders[$header]);
-            $this->setRequest($request);
+            $interface = $interface->withHeader($header, $signedHeaders[$header]);
         }
-
-        return $request;
+        return $interface;
     }
 
     /* PSR-7 verify interface and also check body digest if included */
 
-    public function verifyRequest(RequestInterface $request): bool
+    public function verifyRequest(MessageInterface $interface, RequestInterface $originalRequest = null): bool
     {
         $headers = [];
-        foreach ($request->getHeaders() as $name => $values) {
+        if ($originalRequest) {
+            $this->setOriginalRequest($originalRequest);
+        }
+        foreach ($interface->getHeaders() as $name => $values) {
             $headers[strtolower($name)] = implode(', ', $values);
         }
 
         /* check the body digest if it's present */
 
         if (isset($headers['content-digest'])) {
-            $body = (string)$request->getBody();
+            $body = (string)$interface->getBody();
             if (!$this->isBodyDigestValid($body, $headers['content-digest'])) {
                 return false;
             }
         }
 
-        return $this->verify($headers);
+        return $this->verify($headers, $interface);
     }
 
     /**
@@ -215,10 +221,10 @@ class HttpMessageSigner
      * This matches the sign() function except that it just returns the serialised string
      * and does not sign it.
      */
-    public function calculateSignatureBase(array $headers, string $coveredFields)
+    public function calculateSignatureBase(array $headers, string $coveredFields, $interface)
     {
         $signatureComponents = [];
-
+        $processedComponents = [];
         $dict = $this->parseStructuredDict($coveredFields);
 
         if ($dict->isNotEmpty()) {
@@ -226,7 +232,14 @@ class HttpMessageSigner
             $indices = $dict->indices();
             foreach ($indices as $index) {
                 $member = $dict->getByIndex($index);
-                $signatureComponents[] = $this->canonicalizeComponent($member, $headers);
+                if (!$member) {
+                    throw new \Exception('Index ' . $index . ' not found');
+                }
+                if (in_array($member, $processedComponents, true)) {
+                    throw new \Exception('Duplicate member found');
+                }
+                $processedComponents[] = $member;
+                $signatureComponents[] = $this->canonicalizeComponent($member, $headers, $interface);
             }
         }
 
@@ -243,9 +256,10 @@ class HttpMessageSigner
 
     }
 
-    public function sign(array $headers, string $coveredFields): array
+    public function sign(array $headers, string $coveredFields, MessageInterface $interface): array
     {
         $signatureComponents = [];
+        $processedComponents = [];
 
         $dict = $this->parseStructuredDict($coveredFields);
 
@@ -254,7 +268,14 @@ class HttpMessageSigner
             $indices = $dict->indices();
             foreach ($indices as $index) {
                 $member = $dict->getByIndex($index);
-                $signatureComponents[] = $this->canonicalizeComponent($member, $headers);
+                if (!$member) {
+                    throw new \Exception('Index ' . $index . ' not found');
+                }
+                if (in_array($member, $processedComponents, true)) {
+                    throw new \Exception('Duplicate member found');
+                }
+                $processedComponents[] = $member;
+                $signatureComponents[] = $this->canonicalizeComponent($member, $headers, $interface);
             }
         }
 
@@ -267,16 +288,15 @@ class HttpMessageSigner
         $signatureComponents[] = '"@signature-params": ' . $signatureInput;
 
         $signatureBase = implode("\n", $signatureComponents);
-
         $signature = $this->createSignature($signatureBase);
 
-        $headers['signature-input'] = "sig1=$signatureInput";
-        $headers['signature'] = "sig1=:$signature:";
+        $headers['signature-input'] = "$this->signatureId=$signatureInput";
+        $headers['signature'] = "$this->signatureId=:$signature:";
 
         return $headers;
     }
 
-    public function verify(array $headers): bool
+    public function verify(array $headers, $interface): bool
     {
         if (!isset($headers['signature-input'], $headers['signature'])) {
             return false;
@@ -296,7 +316,7 @@ class HttpMessageSigner
                     $innerIndices = $members->indices();
                     foreach ($innerIndices as $innerIndex) {
                        $member = $members->getByIndex($innerIndex);
-                       $signatureComponents[$dictName][] = $this->canonicalizeComponent($member, $headers);
+                       $signatureComponents[$dictName][] = $this->canonicalizeComponent($member, $headers, $interface);
                     }
                 }
             }
@@ -304,7 +324,6 @@ class HttpMessageSigner
 
         $sigDict = $this->parseStructuredDict($headers['signature']);
         if ($sigDict->isNotEmpty()) {
-            $coveredStructuredFields = $sigInputDict->__toString();
             $indices = $sigDict->indices();
             foreach ($indices as $index) {
                 [$dictName, $members] = $sigDict->getByIndex($index);
@@ -329,35 +348,70 @@ class HttpMessageSigner
                 return false;
             }
 
-            $decodedSig = base64_decode($sigDict[$dictName]);
-
+            $decodedSig = base64_decode(trim($sigDict[$dictName]->__toString(), ':'));
             return $this->verifySignature($signatureBase, $decodedSig, $params['alg'] ?? $this->algorithm);
         }
         return false;
     }
 
-    private function canonicalizeComponent($field, array $headers): string
+    protected function extractParameters($field): array
     {
-        $fieldName = $field->value();
+        $parameters = [];
         $fieldParams = $field->parameters();
 
-
-        $fieldValue = match ($fieldName) {
-            '@signature-params' => '',
-            '@method' => '"@method": ' . strtoupper($this->request->getMethod()),
-            '@authority' => '"@authority": ' . $this->request->getUri()->getAuthority(),
-            '@scheme' => '"@scheme": ' . strtoupper($this->request->getUri()->getScheme()),
-            '@target-uri' => '"@target-uri": ' . $this->request->getUri(), // ?? verify
-            '@request-target' => '"@request-target": ' . $this->request->getUri(), // ?? verify
-            '@path' => '"@path": ' . $this->request->getUri()->getPath(),
-            '@query' => '"@query": ' . $this->request->getUri()->getQuery(),
-            '@query-param' => $this->getQueryParam($fieldParams) ?? '',
-            '@status' => '"@status": ' . $this->response->getStatusCode(),
-            default => '"' . $field . '": ' . $this->normalizeHeader($headers[$fieldName] ?? ''),
-        };
-        return $fieldValue;
+        if ($fieldParams->isNotEmpty()) {
+            $indices = $fieldParams->indices();
+            foreach ($indices as $index) {
+                [$name, $item] = $fieldParams->getByIndex($index);
+                $parameters[$name] = $item->value();
+            }
+        }
+        return $parameters;
     }
 
+    private function canonicalizeComponent($field, array $headers, MessageInterface $interface): string
+    {
+        $fieldName = $field->value();
+        $parameters = $this->extractParameters($field);
+        if (isset($parameters['bs']) && isset($parameters['sf'])) {
+            throw new \Exception('Cannot use both bs and sf');
+        }
+
+        $whichRequest = $interface;
+        if (isset($parameters['req']) && $interface instanceof ResponseInterface) {
+            $whichRequest = $this->getOriginalRequest();
+        }
+        $whichHeaders = $headers;
+        if (isset($parameters['tr'])) {
+            // Do nothing currently. PSR-7 includes trailers in the headers.
+            // @todo: We should check that they are listed in the Trailers header.
+            $whichHeaders = $headers;
+        }
+        [$name, $value] = $this->getFieldValue($fieldName, $whichRequest, $whichHeaders, $parameters);
+        if (isset($parameters['sf'])) {
+            $value = $this->applyStructuredField($name, $value);
+            return $name . ';sf: ' . $value;
+        }
+        return $name . ': ' . $value;
+    }
+
+    private function getFieldValue($fieldName, MessageInterface $interface, $headers, $parameters ): array
+    {
+        $value = match ($fieldName) {
+            '@signature-params' => ['', ''],
+            '@method' => ['"@method"', strtoupper($interface->getMethod())],
+            '@authority' => ['"@authority"', $interface->getUri()->getAuthority()],
+            '@scheme' => ['"@scheme"', strtolower($interface->getUri()->getScheme())],
+            '@target-uri' => ['"target-uri"', $interface->getUri()->__toString()],
+            '@request-target' => ['"@request-target"', $interface->getRequestTarget()],
+            '@path' => ['"@path"', $interface->getUri()->getPath()],
+            '@query' => ['"@query"', $interface->getUri()->getQuery()],
+            '@query-param' => $this->getQueryParam($interface, $parameters) ?? ['', ''],
+            '@status' => ['"@status"', '"@status": ' . $interface->getStatusCode()],
+            default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
+        };
+        return $value;
+    }
 
     /**
      * @param string $query
@@ -386,32 +440,27 @@ class HttpMessageSigner
     }
 
     /**
-     * @param $params
+     * @param $parameters
      * @param $name
      * @return string|null
      *
      * Find one query parameter by name (which must supplied as parameters in the (structured) covered field list).
      */
-    private function getQueryParam(Parameters $params, $name = 'name'): string|null
+    private function getQueryParam($whichRequest, array $parameters): array
     {
-        $queryString = $this->request->getUri()->getQuery();
-        $queryParams = [];
+        $queryString = $whichRequest->getUri()->getQuery();
         if ($queryString) {
             $queryParams = $this->parseQueryString($queryString);
-            if ($params->isNotEmpty()) {
-                $index = $params->indexByKey('name');
-                [ $name, $item ] = $params->getByIndex($index);
-                $fieldName = $item->value();
-                return '"_' . $fieldName . '_": "' . ($queryParams[$fieldName] ?? '') . '"';
-
+            $fieldName = $parameters['name'];
+            if ($fieldName) {
+                return ['"_' . $fieldName . '_"', $queryParams[$fieldName] ? '"' . $queryParams[$fieldName] . '"' : ''];
             }
         }
-        return null;
+        throw new \Exception('Query string named parameter not set');
     }
 
     private function applyRule(string $fieldValue, string $param): string
     {
-
         return match ($param) {
             'sf' => $this->applyStructuredField($fieldValue),
             'key' => $this->applySingleKeyValue($fieldValue),
@@ -423,9 +472,30 @@ class HttpMessageSigner
         };
     }
 
-    private function applyStructuredField(string $fieldValue): string
+    private function applyStructuredField(string $name, string $fieldValue): string
     {
-        $field = Dictionary::fromHttpValue($fieldValue);
+        $type = $this->structuredFieldTypes[trim($name, '"')];
+        switch ($type) {
+            case 'list':
+                $field = OuterList::fromHttpValue($fieldValue);
+                break;
+            case 'innerlist':
+            $field = InnerList::fromHttpValue($fieldValue);
+            break;
+            case 'parameters':
+            $field = Parameters::fromHttpValue($fieldValue);
+            break;
+            case 'dictionary':
+                $field = Dictionary::fromHttpValue($fieldValue);
+                break;
+            case 'item':
+                $field = Item::fromHttpValue($fieldValue);
+            default:
+                break;
+        }
+        if (!$field) {
+            throw new \Exception('Unknown field type');
+        }
         return $field->toHttpValue();
     }
 
@@ -450,12 +520,6 @@ class HttpMessageSigner
     private function applySingleNamedQueryParameter(string $fieldValue): string
     {
         return $fieldValue;
-    }
-
-
-    private function normalizeHeader(string $value): string
-    {
-        return trim(preg_replace('/\s+/', ' ', $value));
     }
 
     private function createSignature(string $data): string
@@ -504,10 +568,6 @@ class HttpMessageSigner
 
     private function parseStructuredDict(string $headerValue)
     {
-        /**
-         * Work in progress. This first section is an attempt to replace the following
-         * manual parser with a structured parser built on bakame/http-structured-fields
-         */
         if (str_starts_with(trim($headerValue), '(')) {
             return InnerList::fromHttpValue($headerValue);
         }
@@ -578,5 +638,64 @@ class HttpMessageSigner
             'body' => $body
         ];
     }
+
+    /**
+     * @return array
+     */
+    public function getStructuredFieldTypes(): array
+    {
+        return $this->structuredFieldTypes;
+    }
+
+    /**
+     * @param array $structuredFieldTypes
+     * @return HttpMessageSigner
+     */
+    public function setStructuredFieldTypes(array $structuredFieldTypes): HttpMessageSigner
+    {
+        $this->structuredFieldTypes = $structuredFieldTypes;
+        return $this;
+    }
+
+    /**
+     * $structuredFieldType consists of a key named after a specific header field, and a value
+     * which is one of 'list', 'innerlist', 'parameters, 'dictionary', 'item'.
+     *
+     * Example:
+     *  ['example-dict' => 'dictionary']
+     *
+     * The 'sf' flag will not be honoured unless the structured type of the header is registered/known.
+     *
+     * @param array $structuredFieldType
+     * @return $this
+     */
+
+    public function addStructuredFieldType(array $structuredFieldType): HttpMessageSigner
+    {
+        foreach ($structuredFieldType as $key => $value) {
+            $this->structuredFieldTypes[$key] = $value;
+        }
+        return $this;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getOriginalRequest()
+    {
+        return $this->originalRequest;
+    }
+
+    /**
+     * @param mixed $originalRequest
+     * @return HttpMessageSigner
+     */
+    public function setOriginalRequest($originalRequest)
+    {
+        $this->originalRequest = $originalRequest;
+        return $this;
+    }
+
+
 }
 
