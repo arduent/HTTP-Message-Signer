@@ -44,11 +44,14 @@ final class HttpMessageSignerTest extends TestCase
         /**
          * Whenever we modify the $request, overwrite the HttpMessageSigner instance with an updated copy.
          */
-        $coveredFields = '("@method" "@path" "host" "date" "@query-param";name="baz" "@query-param";name="bat")';
+        $coveredFields = '("@method" "@path" "host" "date" "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat")';
         $request = $this->signer->signRequest($coveredFields, $request);
         $this->assertTrue($request->hasHeader('signature'));
         $this->assertTrue($request->hasHeader('signature-input'));
-        $normalised = explode("\n", $this->signer->calculateSignatureBase($request->getHeaders(), $coveredFields, $request));
+        $normalised = explode("\n", $this->signer->calculateSignatureBase($this->signer->getHeaders($request), $coveredFields, $request));
+
+        $this->assertContains('"@path": /resource', $normalised);
+        $this->assertContains('"_bat_": ', $normalised);
 
         $this->assertEquals($request->getRequestTarget(), '/resource?bat&baz=3');
 
@@ -158,7 +161,7 @@ final class HttpMessageSignerTest extends TestCase
 
         $request = new Request(
             'POST',
-            'https://api.example.com/resource',
+            'https://api.example.com/resource?bat&baz=3',
             [
                 'Host' => ['api.example.com'],
                 'Date' => [gmdate('D, d M Y H:i:s T')],
@@ -166,9 +169,10 @@ final class HttpMessageSignerTest extends TestCase
             '{"message":"hello"}'
         );
 
+        $coveredFields = '("@method" "@path" "host" "date" "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "content-digest")';
         $digest = $this->signer->createContentDigestHeader((string) $request->getBody());
         $request = $request->withHeader('Content-Digest', $digest);
-        $request = $this->signer->signRequest('("@method" "@path" "host" "date" "content-digest")', $request);
+        $request = $this->signer->signRequest($coveredFields, $request);
 
         echo "\n\nManual Inspection\n\n";
 
@@ -176,6 +180,12 @@ final class HttpMessageSignerTest extends TestCase
             echo $name . ": " . implode(', ', $values) . PHP_EOL;
         }
 
+        echo "\n\nNormalised signature components\n\n";
+
+        $normalised = explode("\n", $this->signer->calculateSignatureBase($this->signer->getHeaders($request), $coveredFields, $request));
+        foreach ($normalised as $component) {
+            echo $component . PHP_EOL;
+        }
         // Optional assertion to keep PHPUnit happy
         $this->assertTrue($request->hasHeader('signature'), 'Signature header should exist');
     }
