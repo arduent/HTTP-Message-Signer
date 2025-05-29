@@ -390,6 +390,7 @@ class HttpMessageSigner
         [$name, $value] = $this->getFieldValue($fieldName, $whichRequest, $whichHeaders, $parameters);
         if (isset($parameters['sf'])) {
             $value = $this->applyStructuredField($name, $value);
+            return $name . ';sf: ' . $value;
         }
         return $name . ': ' . $value;
     }
@@ -407,7 +408,7 @@ class HttpMessageSigner
             '@query' => ['"@query"', $interface->getUri()->getQuery()],
             '@query-param' => $this->getQueryParam($interface, $parameters) ?? ['', ''],
             '@status' => ['"@status"', '"@status": ' . $interface->getStatusCode()],
-            default => ['"' . $fieldName . '"', $this->normalizeHeader($headers[$fieldName] ?? '')],
+            default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
         };
         return $value;
     }
@@ -473,7 +474,7 @@ class HttpMessageSigner
 
     private function applyStructuredField(string $name, string $fieldValue): string
     {
-        $type = $this->structuredFieldTypes[$name];
+        $type = $this->structuredFieldTypes[trim($name, '"')];
         switch ($type) {
             case 'list':
                 $field = OuterList::fromHttpValue($fieldValue);
@@ -519,12 +520,6 @@ class HttpMessageSigner
     private function applySingleNamedQueryParameter(string $fieldValue): string
     {
         return $fieldValue;
-    }
-
-
-    private function normalizeHeader(string $value): string
-    {
-        return trim(preg_replace('/\s+/', ' ', $value));
     }
 
     private function createSignature(string $data): string
@@ -677,7 +672,9 @@ class HttpMessageSigner
 
     public function addStructuredFieldType(array $structuredFieldType): HttpMessageSigner
     {
-        $this->structuredFieldTypes[] = $structuredFieldType;
+        foreach ($structuredFieldType as $key => $value) {
+            $this->structuredFieldTypes[$key] = $value;
+        }
         return $this;
     }
 

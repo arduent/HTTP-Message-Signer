@@ -38,13 +38,15 @@ final class HttpMessageSignerTest extends TestCase
                 'Host' => ['api.example.com'],
                 'Date' => [gmdate('D, d M Y H:i:s T')],
                 'x-test' => [''],
+                'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
             ]
         );
 
         /**
          * Whenever we modify the $request, overwrite the HttpMessageSigner instance with an updated copy.
          */
-        $coveredFields = '("@method" "@path" "host" "date" "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat")';
+        $coveredFields = '("@method" "@path" "host" "date" "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "example-dict" "example-dict";sf)';
+        $this->signer->addStructuredFieldType(['example-dict' => 'dictionary']);
         $request = $this->signer->signRequest($coveredFields, $request);
         $this->assertTrue($request->hasHeader('signature'));
         $this->assertTrue($request->hasHeader('signature-input'));
@@ -165,11 +167,13 @@ final class HttpMessageSignerTest extends TestCase
             [
                 'Host' => ['api.example.com'],
                 'Date' => [gmdate('D, d M Y H:i:s T')],
+                'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
             ],
             '{"message":"hello"}'
         );
 
-        $coveredFields = '("@method" "@path" "host" "date" "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "content-digest")';
+        $coveredFields = '("@method" "@path" "host" "date" "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "content-digest" "example-dict" "example-dict";sf)';
+        $this->signer->addStructuredFieldType(['example-dict' => 'dictionary']);
         $digest = $this->signer->createContentDigestHeader((string) $request->getBody());
         $request = $request->withHeader('Content-Digest', $digest);
         $request = $this->signer->signRequest($coveredFields, $request);
