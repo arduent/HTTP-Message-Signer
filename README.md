@@ -85,7 +85,9 @@ Using the 'sf' parameter on a component will treat a signature component as a St
 
 However, parsing Structured Fields by adding the 'sf' parameter is likely to fail unless you know what `type` it is. This library has no current knowledge of all the header fields which could potentially be structured. So there are two methods available -- setStructuredFieldTypes() and addStructuredFieldTypes(). These take an array with key of the lowercase header name and a value which is one of 'list', 'innerlist', 'parameters, 'dictionary', 'item'. If the header name is in the list and the 'sf' modifier is used, the header will be parsed as the Structured Field type indicated.
 
-Future enhancements to this library would provide a base dictionary or catalog which correctly identifies the type of common HTTP fields that are already known to be structured. These aren't very common currently, but signatures will fail for any field modified by 'sf' and whose type has not been supplied in `$structuredFieldTypes` . 
+If a Structured Field is declared as type 'dictionary'; it is suitable for use with the RFC9421 `key` parameter. Using this parameter will fail if the Structured Field type is unknown or has not been registered. 
+
+Future enhancements to this library would provide a base dictionary or catalog which correctly identifies the type of common HTTP fields that are already known to be structured. These aren't very common currently, but signatures will fail for any field modified by 'sf' or 'key' and whose type has not been supplied in `$structuredFieldTypes` . 
 
 
 The signRequest() and verifyRequest() methods both use an instance of MessageInterface. In nearly all cases, this will be the RequestInterface. However, when signing responses, the default will be the ResponseInterface, and if components are required from the RequestInterface, the :req parameter must be added to the field definition. 
