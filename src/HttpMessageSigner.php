@@ -495,6 +495,24 @@ class HttpMessageSigner
                 break;
             case 'item':
                 $field = Item::fromHttpValue($fieldValue);
+                break;
+            case 'url':
+                return '"' . $fieldValue . '"';
+            case 'date':
+                return '@' . strtotime($fieldValue);
+            case 'etag':
+                $result = '';
+                $list = explode(',', $fieldValue);
+                foreach ($list as $item) {
+                    if (str_starts_with(trim($item), 'W/')) {
+                        $result .= substr(trim($item), 2) . '; w' . ', ';
+                    } else {
+                        $result .= trim($item) . ', ';
+                    }
+                }
+                return rtrim($result, ', ');
+            case 'cookie':
+                // @TODO
             default:
                 break;
         }
