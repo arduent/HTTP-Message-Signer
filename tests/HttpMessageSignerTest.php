@@ -41,11 +41,14 @@ final class HttpMessageSignerTest extends TestCase
                 'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
             ]
         );
+        // Use this method to add an additional header with same name as an existing header.
+        $request = $request->withHeader('Example-Header', 'value, with, lots');
+        $request = $request->withAddedHeader('Example-Header', 'of, commas');
 
         /**
          * Whenever we modify the $request, overwrite the HttpMessageSigner instance with an updated copy.
          */
-        $coveredFields = '("@method" "@path" "host" "date" "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "example-dict" "example-dict";sf)';
+        $coveredFields = '("example-header";bs "@method" "@path" "host" "date" "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "example-dict" "example-dict";sf "example-dict";key="a" "example-dict";key="b" "example-dict";key="c" "example-dict";key="d")';
         $this->signer->addStructuredFieldType(['example-dict' => 'dictionary']);
         $request = $this->signer->signRequest($coveredFields, $request);
         $this->assertTrue($request->hasHeader('signature'));
@@ -171,8 +174,11 @@ final class HttpMessageSignerTest extends TestCase
             ],
             '{"message":"hello"}'
         );
+        // Use this method to add an additional header with same name as an existing header.
+        $request = $request->withHeader('Example-Header', 'value, with, lots');
+        $request = $request->withAddedHeader('Example-Header', 'of, commas');
 
-        $coveredFields = '("@method" "@path" "host" "date" "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "content-digest" "example-dict" "example-dict";sf)';
+        $coveredFields = '("@method" "@path" "host" "date" "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "content-digest" "example-dict" "example-dict";sf "example-dict";key="a" "example-dict";key="b" "example-dict";key="c" "example-dict";key="d" "example-header";bs)';
         $this->signer->addStructuredFieldType(['example-dict' => 'dictionary']);
         $digest = $this->signer->createContentDigestHeader((string) $request->getBody());
         $request = $request->withHeader('Content-Digest', $digest);

@@ -25,13 +25,9 @@ class HttpMessageSigner
 
     public function __construct()
     {
+        $this->setStructuredFieldTypes((new StructuredFieldTypes())->getFields());
         return $this;
     }
-
-
-
-
-
 
     /**
      * This sets which of [$request, $response] is the signing interface
@@ -382,15 +378,37 @@ class HttpMessageSigner
             $whichRequest = $this->getOriginalRequest();
         }
         $whichHeaders = $headers;
+
         if (isset($parameters['tr'])) {
-            // Do nothing currently. PSR-7 includes trailers in the headers.
-            // @todo: We should check that they are listed in the Trailers header.
-            $whichHeaders = $headers;
+            $whichHeaders = $whichRequest->getTrailers();
         }
+
         [$name, $value] = $this->getFieldValue($fieldName, $whichRequest, $whichHeaders, $parameters);
+
+        if (isset($parameters['bs'])) {
+            $result = $name . ';bs: ';
+            $values = $whichRequest->getHeader($fieldName);
+            if (!$values) {
+                return '';
+            }
+            if (!is_array($values)) {
+                $values = [$values];
+            }
+            foreach ($values as $value) {
+                $value = trim($value);
+                $result .= ':' . base64_encode($value) . ':' . ', ';
+            }
+            return $values ? rtrim($result, ', ') : $result;
+        }
+
         if (isset($parameters['sf'])) {
             $value = $this->applyStructuredField($name, $value);
             return $name . ';sf: ' . $value;
+        }
+        if (isset($parameters['key'])) {
+            $childName = $parameters['key'];
+            $value = $this->applySingleKeyValue($name, $childName, $value);
+            return $name . ';key="' . $childName . '": ' . $value;
         }
         return $name . ': ' . $value;
     }
@@ -459,19 +477,6 @@ class HttpMessageSigner
         throw new \Exception('Query string named parameter not set');
     }
 
-    private function applyRule(string $fieldValue, string $param): string
-    {
-        return match ($param) {
-            'sf' => $this->applyStructuredField($fieldValue),
-            'key' => $this->applySingleKeyValue($fieldValue),
-            'bs' => $this->applyByteSequence($fieldValue),
-            'tr' => $this->applyTrailer($fieldValue),
-            'req' => $this->applyRelatedRequest($fieldValue),
-            'name' => $this->applySingleNamedQueryParameter($fieldValue),
-            default => $fieldValue,
-        };
-    }
-
     private function applyStructuredField(string $name, string $fieldValue): string
     {
         $type = $this->structuredFieldTypes[trim($name, '"')];
@@ -494,14 +499,21 @@ class HttpMessageSigner
                 break;
         }
         if (!$field) {
-            throw new \Exception('Unknown field type');
+            return '';
         }
         return $field->toHttpValue();
     }
 
-    private function applySingleKeyValue(string $fieldValue): string
+    private function applySingleKeyValue(string $name, string $key, string $fieldValue): string
     {
-        return $fieldValue;
+        $type = $this->structuredFieldTypes[trim($name, '"')];
+        if (empty($type) || $type === 'dictionary') {
+            $dictionary = Dictionary::fromHttpValue($fieldValue);
+            if ($dictionary->isNotEmpty() && isset($dictionary[$key])) {
+                return $dictionary[$key]->toHttpValue();
+            }
+        }
+        return '';
     }
 
     private function applyByteSequence(string $fieldValue): string
@@ -510,14 +522,6 @@ class HttpMessageSigner
     }
 
     private function applyTrailer(string $fieldValue): string
-    {
-        return $fieldValue;
-    }
-    private function applyRelatedRequest(string $fieldValue): string
-    {
-        return $fieldValue;
-    }
-    private function applySingleNamedQueryParameter(string $fieldValue): string
     {
         return $fieldValue;
     }
