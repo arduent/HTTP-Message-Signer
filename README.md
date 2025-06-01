@@ -3,6 +3,8 @@
 
 A PHP 8.1+ library for signing and verifying HTTP messages (requests or responses) per [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421).
 
+This is a fork of quantificant/http-message-signer
+
 Supports:
 - RSA-SHA256
 - Ed25519
@@ -24,7 +26,7 @@ This is Alpha version please report issues. Thanks. Tested on PHP 8.4, should ru
 ## Installation
 
 ```bash
-composer require quantificant/http-message-signer
+composer require macgirvin/http-message-signer
 ```
 
 
