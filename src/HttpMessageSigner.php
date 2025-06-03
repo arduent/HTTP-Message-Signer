@@ -304,7 +304,6 @@ class HttpMessageSigner
         $signatureComponents = [];
 
         if ($sigInputDict->isNotEmpty()) {
-            $coveredStructuredFields = $sigInputDict->__toString();
             $indices = $sigInputDict->indices();
             foreach ($indices as $index) {
                 [$dictName, $members] = $sigInputDict->getByIndex($index);
@@ -314,6 +313,13 @@ class HttpMessageSigner
                        $member = $members->getByIndex($innerIndex);
                        $signatureComponents[$dictName][] = $this->canonicalizeComponent($member, $headers, $interface);
                     }
+                }
+            }
+            $topLevelParams = $this->extractParameters($sigInputDict);
+            if (isset($topLevelParams['expires'])) {
+                $expires = (int) $topLevelParams['expires'];
+                if ($expires < time()) {
+                    return false;
                 }
             }
         }
