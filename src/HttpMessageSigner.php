@@ -18,6 +18,11 @@ class HttpMessageSigner
     private string $publicKey;
     private string $algorithm;
     private string $signatureId = 'sig1';
+    private string $created;
+    private string $expires;
+    private string $nonce;
+    private string $tag;
+
     private array $structuredFieldTypes = [];
 
     private $originalRequest;
@@ -25,109 +30,7 @@ class HttpMessageSigner
 
     public function __construct()
     {
-        return $this;
-    }
-
-
-
-
-
-
-    /**
-     * This sets which of [$request, $response] is the signing interface
-     * By default it is $request.
-     *
-     * @param MessageInterface $interface
-     * @return $this
-     */
-
-    /**
-     * @return string
-     */
-    public function getKeyId(): string
-    {
-        return $this->keyId;
-    }
-
-    /**
-     * @param string $keyId
-     * @return HttpMessageSigner
-     */
-    public function setKeyId(string $keyId): HttpMessageSigner
-    {
-        $this->keyId = $keyId;
-        return $this;
-    }
-
-    /**
-     * @return string
-     */
-    public function getPrivateKey(): string
-    {
-        return $this->privateKey;
-    }
-
-    /**
-     * @param string $privateKey
-     * @return HttpMessageSigner
-     */
-    public function setPrivateKey(string $privateKey): HttpMessageSigner
-    {
-        $this->privateKey = $privateKey;
-        return $this;
-    }
-
-    /**
-     * @return string
-     */
-    public function getPublicKey(): string
-    {
-        return $this->publicKey;
-    }
-
-    /**
-     * @param string $publicKey
-     * @return HttpMessageSigner
-     */
-    public function setPublicKey(string $publicKey): HttpMessageSigner
-    {
-        $this->publicKey = $publicKey;
-        return $this;
-    }
-
-    /**
-     * @return string
-     */
-    public function getAlgorithm(): string
-    {
-        return $this->algorithm;
-    }
-
-    /**
-     * @param string $algorithm
-     * @return HttpMessageSigner
-     */
-    public function setAlgorithm(string $algorithm): HttpMessageSigner
-    {
-        $this->algorithm = $algorithm;
-        return $this;
-    }
-
-    /**
-     * @return string
-     */
-    public function getSignatureId(): string
-    {
-        return $this->signatureId;
-    }
-
-    /**
-     * @param string $signatureId
-     * @return HttpMessageSigner
-     */
-    public function setSignatureId(string $signatureId): HttpMessageSigner
-    {
-        $this->signatureId = $signatureId;
+        $this->setStructuredFieldTypes((new StructuredFieldTypes())->getFields());
         return $this;
     }
 
@@ -246,6 +149,20 @@ class HttpMessageSigner
         $signatureInput = $coveredStructuredFields . ';keyid="'
             . $this->keyId . '";alg="' . $this->algorithm . '"';
 
+        if ($this->created) {
+            $signatureInput .= ';created=' . $this->created;
+        }
+        if ($this->expires) {
+            $signatureInput .= ';expires=' . $this->expires;
+        }
+        if ($this->nonce) {
+            $signatureInput .= ';nonce="' . $this->nonce . '"';
+        }
+        if ($this->tag) {
+            $signatureInput .= ';tag="' . $this->tag . '"';
+        }
+
+
         /**
          * Always include @signature-params in the result.
          */
@@ -308,7 +225,6 @@ class HttpMessageSigner
         $signatureComponents = [];
 
         if ($sigInputDict->isNotEmpty()) {
-            $coveredStructuredFields = $sigInputDict->__toString();
             $indices = $sigInputDict->indices();
             foreach ($indices as $index) {
                 [$dictName, $members] = $sigInputDict->getByIndex($index);
@@ -318,6 +234,13 @@ class HttpMessageSigner
                        $member = $members->getByIndex($innerIndex);
                        $signatureComponents[$dictName][] = $this->canonicalizeComponent($member, $headers, $interface);
                     }
+                }
+            }
+            $topLevelParams = $this->extractParameters($sigInputDict);
+            if (isset($topLevelParams['expires'])) {
+                $expires = (int) $topLevelParams['expires'];
+                if ($expires < time()) {
+                    return false;
                 }
             }
         }
@@ -382,15 +305,37 @@ class HttpMessageSigner
             $whichRequest = $this->getOriginalRequest();
         }
         $whichHeaders = $headers;
+
         if (isset($parameters['tr'])) {
-            // Do nothing currently. PSR-7 includes trailers in the headers.
-            // @todo: We should check that they are listed in the Trailers header.
-            $whichHeaders = $headers;
+            $whichHeaders = $whichRequest->getTrailers();
         }
+
         [$name, $value] = $this->getFieldValue($fieldName, $whichRequest, $whichHeaders, $parameters);
+
+        if (isset($parameters['bs'])) {
+            $result = $name . ';bs: ';
+            $values = $whichRequest->getHeader($fieldName);
+            if (!$values) {
+                return '';
+            }
+            if (!is_array($values)) {
+                $values = [$values];
+            }
+            foreach ($values as $value) {
+                $value = trim($value);
+                $result .= ':' . base64_encode($value) . ':' . ', ';
+            }
+            return $values ? rtrim($result, ', ') : $result;
+        }
+
         if (isset($parameters['sf'])) {
             $value = $this->applyStructuredField($name, $value);
             return $name . ';sf: ' . $value;
+        }
+        if (isset($parameters['key'])) {
+            $childName = $parameters['key'];
+            $value = $this->applySingleKeyValue($name, $childName, $value);
+            return $name . ';key="' . $childName . '": ' . $value;
         }
         return $name . ': ' . $value;
     }
@@ -459,19 +404,6 @@ class HttpMessageSigner
         throw new \Exception('Query string named parameter not set');
     }
 
-    private function applyRule(string $fieldValue, string $param): string
-    {
-        return match ($param) {
-            'sf' => $this->applyStructuredField($fieldValue),
-            'key' => $this->applySingleKeyValue($fieldValue),
-            'bs' => $this->applyByteSequence($fieldValue),
-            'tr' => $this->applyTrailer($fieldValue),
-            'req' => $this->applyRelatedRequest($fieldValue),
-            'name' => $this->applySingleNamedQueryParameter($fieldValue),
-            default => $fieldValue,
-        };
-    }
-
     private function applyStructuredField(string $name, string $fieldValue): string
     {
         $type = $this->structuredFieldTypes[trim($name, '"')];
@@ -490,18 +422,43 @@ class HttpMessageSigner
                 break;
             case 'item':
                 $field = Item::fromHttpValue($fieldValue);
+                break;
+            case 'url':
+                return '"' . $fieldValue . '"';
+            case 'date':
+                return '@' . strtotime($fieldValue);
+            case 'etag':
+                $result = '';
+                $list = explode(',', $fieldValue);
+                foreach ($list as $item) {
+                    if (str_starts_with(trim($item), 'W/')) {
+                        $result .= substr(trim($item), 2) . '; w' . ', ';
+                    } else {
+                        $result .= trim($item) . ', ';
+                    }
+                }
+                return rtrim($result, ', ');
+            case 'cookie':
+                // @TODO
             default:
                 break;
         }
         if (!$field) {
-            throw new \Exception('Unknown field type');
+            return '';
         }
         return $field->toHttpValue();
     }
 
-    private function applySingleKeyValue(string $fieldValue): string
+    private function applySingleKeyValue(string $name, string $key, string $fieldValue): string
     {
-        return $fieldValue;
+        $type = $this->structuredFieldTypes[trim($name, '"')];
+        if (empty($type) || $type === 'dictionary') {
+            $dictionary = Dictionary::fromHttpValue($fieldValue);
+            if ($dictionary->isNotEmpty() && isset($dictionary[$key])) {
+                return $dictionary[$key]->toHttpValue();
+            }
+        }
+        return '';
     }
 
     private function applyByteSequence(string $fieldValue): string
@@ -510,14 +467,6 @@ class HttpMessageSigner
     }
 
     private function applyTrailer(string $fieldValue): string
-    {
-        return $fieldValue;
-    }
-    private function applyRelatedRequest(string $fieldValue): string
-    {
-        return $fieldValue;
-    }
-    private function applySingleNamedQueryParameter(string $fieldValue): string
     {
         return $fieldValue;
     }
@@ -693,6 +642,168 @@ class HttpMessageSigner
     public function setOriginalRequest($originalRequest)
     {
         $this->originalRequest = $originalRequest;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getKeyId(): string
+    {
+        return $this->keyId;
+    }
+
+    /**
+     * @param string $keyId
+     * @return HttpMessageSigner
+     */
+    public function setKeyId(string $keyId): HttpMessageSigner
+    {
+        $this->keyId = $keyId;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getPrivateKey(): string
+    {
+        return $this->privateKey;
+    }
+
+    /**
+     * @param string $privateKey
+     * @return HttpMessageSigner
+     */
+    public function setPrivateKey(string $privateKey): HttpMessageSigner
+    {
+        $this->privateKey = $privateKey;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getPublicKey(): string
+    {
+        return $this->publicKey;
+    }
+
+    /**
+     * @param string $publicKey
+     * @return HttpMessageSigner
+     */
+    public function setPublicKey(string $publicKey): HttpMessageSigner
+    {
+        $this->publicKey = $publicKey;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getAlgorithm(): string
+    {
+        return $this->algorithm;
+    }
+
+    /**
+     * @param string $algorithm
+     * @return HttpMessageSigner
+     */
+    public function setAlgorithm(string $algorithm): HttpMessageSigner
+    {
+        $this->algorithm = $algorithm;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getSignatureId(): string
+    {
+        return $this->signatureId;
+    }
+
+    /**
+     * @param string $signatureId
+     * @return HttpMessageSigner
+     */
+    public function setSignatureId(string $signatureId): HttpMessageSigner
+    {
+        $this->signatureId = $signatureId;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getCreated(): string
+    {
+        return $this->created;
+    }
+
+    /**
+     * @param string $created
+     * @return HttpMessageSigner
+     */
+    public function setCreated(string $created): HttpMessageSigner
+    {
+        $this->created = $created;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getExpires(): string
+    {
+        return $this->expires;
+    }
+
+    /**
+     * @param string $expires
+     * @return HttpMessageSigner
+     */
+    public function setExpires(string $expires): HttpMessageSigner
+    {
+        $this->expires = $expires;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getNonce(): string
+    {
+        return $this->nonce;
+    }
+
+    /**
+     * @param string $nonce
+     * @return HttpMessageSigner
+     */
+    public function setNonce(string $nonce): HttpMessageSigner
+    {
+        $this->nonce = $nonce;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getTag(): string
+    {
+        return $this->tag;
+    }
+
+    /**
+     * @param string $tag
+     * @return HttpMessageSigner
+     */
+    public function setTag(string $tag): HttpMessageSigner
+    {
+        $this->tag = $tag;
         return $this;
     }
 
