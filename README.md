@@ -54,15 +54,22 @@ $request = new Request(
     [
         'Host' => ['api.example.com'],
         'Date' => [gmdate('D, d M Y H:i:s T')],
+        ...additional headers
     ]
 );
 
 $signer = (new HttpMessageSigner())
     ->setPrivateKey($privateKey) // only needed for signing
     ->setPublicKey($publicKey)   // only needed for verifying
-    ->setKeyId('test-key')
-    ->setAlgorithm('rsa-sha256');
-
+    ->setKeyId('https://example.com/dave#rsaKey')  // required
+    ->setAlgorithm('rsa-sha256')    // required
+    ->setCreated(time())            // recommended
+    ->setExpires(time() + 300)      // optional, contentious
+    ->setNonce('xJJ9;ro.3*kidney`') // optional one-time token
+    ->setTag('fediverse')           // optional app profile name
+    ->setSignatureId('sig1')        // optional, default is sig1
+    
+    
 $request = $signer->signRequest('("@method" "@path" "host" "date")', $request);
 $isValid = $signer->verifyRequest($request);
 ```

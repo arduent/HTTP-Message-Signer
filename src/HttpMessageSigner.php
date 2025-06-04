@@ -18,6 +18,11 @@ class HttpMessageSigner
     private string $publicKey;
     private string $algorithm;
     private string $signatureId = 'sig1';
+    private string $created;
+    private string $expires;
+    private string $nonce;
+    private string $tag;
+
     private array $structuredFieldTypes = [];
 
     private $originalRequest;
@@ -26,104 +31,6 @@ class HttpMessageSigner
     public function __construct()
     {
         $this->setStructuredFieldTypes((new StructuredFieldTypes())->getFields());
-        return $this;
-    }
-
-    /**
-     * This sets which of [$request, $response] is the signing interface
-     * By default it is $request.
-     *
-     * @param MessageInterface $interface
-     * @return $this
-     */
-
-    /**
-     * @return string
-     */
-    public function getKeyId(): string
-    {
-        return $this->keyId;
-    }
-
-    /**
-     * @param string $keyId
-     * @return HttpMessageSigner
-     */
-    public function setKeyId(string $keyId): HttpMessageSigner
-    {
-        $this->keyId = $keyId;
-        return $this;
-    }
-
-    /**
-     * @return string
-     */
-    public function getPrivateKey(): string
-    {
-        return $this->privateKey;
-    }
-
-    /**
-     * @param string $privateKey
-     * @return HttpMessageSigner
-     */
-    public function setPrivateKey(string $privateKey): HttpMessageSigner
-    {
-        $this->privateKey = $privateKey;
-        return $this;
-    }
-
-    /**
-     * @return string
-     */
-    public function getPublicKey(): string
-    {
-        return $this->publicKey;
-    }
-
-    /**
-     * @param string $publicKey
-     * @return HttpMessageSigner
-     */
-    public function setPublicKey(string $publicKey): HttpMessageSigner
-    {
-        $this->publicKey = $publicKey;
-        return $this;
-    }
-
-    /**
-     * @return string
-     */
-    public function getAlgorithm(): string
-    {
-        return $this->algorithm;
-    }
-
-    /**
-     * @param string $algorithm
-     * @return HttpMessageSigner
-     */
-    public function setAlgorithm(string $algorithm): HttpMessageSigner
-    {
-        $this->algorithm = $algorithm;
-        return $this;
-    }
-
-    /**
-     * @return string
-     */
-    public function getSignatureId(): string
-    {
-        return $this->signatureId;
-    }
-
-    /**
-     * @param string $signatureId
-     * @return HttpMessageSigner
-     */
-    public function setSignatureId(string $signatureId): HttpMessageSigner
-    {
-        $this->signatureId = $signatureId;
         return $this;
     }
 
@@ -241,6 +148,20 @@ class HttpMessageSigner
 
         $signatureInput = $coveredStructuredFields . ';keyid="'
             . $this->keyId . '";alg="' . $this->algorithm . '"';
+
+        if ($this->created) {
+            $signatureInput .= ';created=' . $this->created;
+        }
+        if ($this->expires) {
+            $signatureInput .= ';expires=' . $this->expires;
+        }
+        if ($this->nonce) {
+            $signatureInput .= ';nonce="' . $this->nonce . '"';
+        }
+        if ($this->tag) {
+            $signatureInput .= ';tag="' . $this->tag . '"';
+        }
+
 
         /**
          * Always include @signature-params in the result.
@@ -721,6 +642,168 @@ class HttpMessageSigner
     public function setOriginalRequest($originalRequest)
     {
         $this->originalRequest = $originalRequest;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getKeyId(): string
+    {
+        return $this->keyId;
+    }
+
+    /**
+     * @param string $keyId
+     * @return HttpMessageSigner
+     */
+    public function setKeyId(string $keyId): HttpMessageSigner
+    {
+        $this->keyId = $keyId;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getPrivateKey(): string
+    {
+        return $this->privateKey;
+    }
+
+    /**
+     * @param string $privateKey
+     * @return HttpMessageSigner
+     */
+    public function setPrivateKey(string $privateKey): HttpMessageSigner
+    {
+        $this->privateKey = $privateKey;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getPublicKey(): string
+    {
+        return $this->publicKey;
+    }
+
+    /**
+     * @param string $publicKey
+     * @return HttpMessageSigner
+     */
+    public function setPublicKey(string $publicKey): HttpMessageSigner
+    {
+        $this->publicKey = $publicKey;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getAlgorithm(): string
+    {
+        return $this->algorithm;
+    }
+
+    /**
+     * @param string $algorithm
+     * @return HttpMessageSigner
+     */
+    public function setAlgorithm(string $algorithm): HttpMessageSigner
+    {
+        $this->algorithm = $algorithm;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getSignatureId(): string
+    {
+        return $this->signatureId;
+    }
+
+    /**
+     * @param string $signatureId
+     * @return HttpMessageSigner
+     */
+    public function setSignatureId(string $signatureId): HttpMessageSigner
+    {
+        $this->signatureId = $signatureId;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getCreated(): string
+    {
+        return $this->created;
+    }
+
+    /**
+     * @param string $created
+     * @return HttpMessageSigner
+     */
+    public function setCreated(string $created): HttpMessageSigner
+    {
+        $this->created = $created;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getExpires(): string
+    {
+        return $this->expires;
+    }
+
+    /**
+     * @param string $expires
+     * @return HttpMessageSigner
+     */
+    public function setExpires(string $expires): HttpMessageSigner
+    {
+        $this->expires = $expires;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getNonce(): string
+    {
+        return $this->nonce;
+    }
+
+    /**
+     * @param string $nonce
+     * @return HttpMessageSigner
+     */
+    public function setNonce(string $nonce): HttpMessageSigner
+    {
+        $this->nonce = $nonce;
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getTag(): string
+    {
+        return $this->tag;
+    }
+
+    /**
+     * @param string $tag
+     * @return HttpMessageSigner
+     */
+    public function setTag(string $tag): HttpMessageSigner
+    {
+        $this->tag = $tag;
         return $this;
     }
 
