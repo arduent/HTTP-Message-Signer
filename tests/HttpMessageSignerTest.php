@@ -25,7 +25,8 @@ final class HttpMessageSignerTest extends TestCase
             ->setPrivateKey($this->privateKey)
             ->setPublicKey($this->publicKey)
             ->setKeyId('test-key')
-            ->setAlgorithm('rsa-sha256');
+            ->setAlgorithm('rsa-sha256')
+            ->setCreated(time());
 
     }
 
@@ -41,7 +42,7 @@ final class HttpMessageSignerTest extends TestCase
                 'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
             ]
         );
-        // Use this method to add an additional header with same name as an existing header.
+        // Use this method to provide an additional header with same name as an existing header.
         $request = $request->withHeader('Example-Header', 'value, with, lots');
         $request = $request->withAddedHeader('Example-Header', 'of, commas');
         $request = $request->withHeader('If-None-Match', 'W/"abcdef", "ghijkl", *');
