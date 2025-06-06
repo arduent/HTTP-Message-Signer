@@ -18,10 +18,10 @@ class HttpMessageSigner
     private string $publicKey;
     private string $algorithm;
     private string $signatureId = 'sig1';
-    private string $created;
-    private string $expires;
-    private string $nonce;
-    private string $tag;
+    private string $created = '';
+    private string $expires = '';
+    private string $nonce = '';
+    private string $tag = '';
 
     private array $structuredFieldTypes = [];
 
@@ -197,7 +197,11 @@ class HttpMessageSigner
         }
 
         $signatureInput = $coveredStructuredFields . ';keyid="'
-                . $this->keyId . '";alg="' . $this->algorithm . '"';
+                . $this->keyId . '";alg="' . $this->algorithm . '"'
+                . (($this->created) ? ';created=' . $this->created : '')
+                . (($this->expires) ? ';expires=' . $this->expires : '')
+                . (($this->nonce) ? ';nonce="' . $this->nonce . '"' : '')
+                . (($this->tag) ? ';tag="' . $this->tag . '"' : '');
 
         /**
          * Always include @signature-params in the result.
@@ -228,7 +232,9 @@ class HttpMessageSigner
             $indices = $sigInputDict->indices();
             foreach ($indices as $index) {
                 [$dictName, $members] = $sigInputDict->getByIndex($index);
+
                 if ($members instanceof InnerList) {
+                    $components = $members;
                     $innerIndices = $members->indices();
                     foreach ($innerIndices as $innerIndex) {
                        $member = $members->getByIndex($innerIndex);
@@ -236,7 +242,7 @@ class HttpMessageSigner
                     }
                 }
             }
-            $topLevelParams = $this->extractParameters($sigInputDict);
+            $topLevelParams = $this->extractParameters($components);
             if (isset($topLevelParams['expires'])) {
                 $expires = (int) $topLevelParams['expires'];
                 if ($expires < time()) {
