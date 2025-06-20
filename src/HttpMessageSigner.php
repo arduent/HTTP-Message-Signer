@@ -232,21 +232,26 @@ class HttpMessageSigner
             $indices = $sigInputDict->indices();
             foreach ($indices as $index) {
                 [$dictName, $members] = $sigInputDict->getByIndex($index);
-
                 if ($members instanceof InnerList) {
-                    $components = $members;
                     $innerIndices = $members->indices();
                     foreach ($innerIndices as $innerIndex) {
                        $member = $members->getByIndex($innerIndex);
                        $signatureComponents[$dictName][] = $this->canonicalizeComponent($member, $headers, $interface);
                     }
-                }
-            }
-            $topLevelParams = $this->extractParameters($components);
-            if (isset($topLevelParams['expires'])) {
-                $expires = (int) $topLevelParams['expires'];
-                if ($expires < time()) {
-                    return false;
+                    $parameters = $this->extractParameters($members);
+
+                    if ($parameters['expires']) {
+                        $expires = (int) $parameters['expires'];
+                        if ($expires < time()) {
+                            return false;
+                        }
+                        if ($parameters['created']) {
+                            $created = (int) $parameters['created'];
+                            if ($created >= $expires) {
+                                return false;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -812,7 +817,5 @@ class HttpMessageSigner
         $this->tag = $tag;
         return $this;
     }
-
-
 }
 
