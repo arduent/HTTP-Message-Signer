@@ -239,10 +239,17 @@ class HttpMessageSigner
                        $signatureComponents[$dictName][] = $this->canonicalizeComponent($member, $headers, $interface);
                     }
                     $parameters = $this->extractParameters($members);
-                    if (isset($parameters['expires'])) {
+
+                    if ($parameters['expires']) {
                         $expires = (int) $parameters['expires'];
                         if ($expires < time()) {
                             return false;
+                        }
+                        if ($parameters['created']) {
+                            $created = (int) $parameters['created'];
+                            if ($created >= $expires) {
+                                return false;
+                            }
                         }
                     }
                 }
