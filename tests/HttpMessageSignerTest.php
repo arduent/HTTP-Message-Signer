@@ -36,9 +36,9 @@ final class HttpMessageSignerTest extends TestCase
             'POST',
             'https://api.example.com/resource?bat&baz=3',
             [
-                'Host' => ['api.example.com'],
-                'Date' => [gmdate('D, d M Y H:i:s T')],
-                'x-test' => [''],
+                'Host' => 'api.example.com',
+                'Date' => gmdate('D, d M Y H:i:s T'),
+                'x-test' => '',
                 'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
             ]
         );
@@ -74,7 +74,10 @@ final class HttpMessageSignerTest extends TestCase
         $request = new Request(
             'POST',
             'https://example.com/api',
-            ['Host' => ['example.com'], 'Content-Digest' => [$digest]],
+            [
+                'Host' => 'example.com',
+                'Content-Digest' => $digest
+            ],
             $body
         );
 
@@ -93,7 +96,10 @@ final class HttpMessageSignerTest extends TestCase
         $request = new Request(
             'POST',
             'https://example.com/api',
-            ['Host' => ['example.com'], 'Content-Digest' => [$digest]],
+            [
+                'Host' => 'example.com',
+                'Content-Digest' => $digest
+            ],
             $tamperedBody
         );
 
@@ -109,8 +115,8 @@ final class HttpMessageSignerTest extends TestCase
             'POST',
             'https://api.example.com/resource',
             [
-                'Host' => ['api.example.com'],
-                'Date' => [gmdate('D, d M Y H:i:s T')],
+                'Host' => 'api.example.com',
+                'Date' => gmdate('D, d M Y H:i:s T'),
             ]
         );
 
@@ -128,8 +134,8 @@ final class HttpMessageSignerTest extends TestCase
             'POST',
             'https://api.example.com/resource',
             [
-                'Host' => ['api.example.com'],
-                'Date' => [gmdate('D, d M Y H:i:s T')],
+                'Host' => 'api.example.com',
+                'Date' => gmdate('D, d M Y H:i:s T'),
             ]
         );
 
@@ -169,8 +175,8 @@ final class HttpMessageSignerTest extends TestCase
             'POST',
             'https://api.example.com/resource?bat&baz=3',
             [
-                'Host' => ['api.example.com'],
-                'Date' => [gmdate('D, d M Y H:i:s T')],
+                'Host' => 'api.example.com',
+                'Date' => gmdate('D, d M Y H:i:s T'),
                 'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
                 'If-None-Match' => 'W/"abcdef", "ghijkl", *',
             ],

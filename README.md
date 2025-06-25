@@ -52,8 +52,8 @@ $request = new Request(
     'GET',
     'https://api.example.com/resource?bat&baz=3',
     [
-        'Host' => ['api.example.com'],
-        'Date' => [gmdate('D, d M Y H:i:s T')],
+        'Host' => 'api.example.com',
+        'Date' => gmdate('D, d M Y H:i:s T'),
         ...additional headers
     ]
 );
