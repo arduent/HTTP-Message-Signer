@@ -240,12 +240,12 @@ class HttpMessageSigner
                     }
                     $parameters = $this->extractParameters($members);
 
-                    if ($parameters['expires']) {
+                    if (isset($parameters['expires'])) {
                         $expires = (int) $parameters['expires'];
                         if ($expires < time()) {
                             return false;
                         }
-                        if ($parameters['created']) {
+                        if (isset($parameters['created'])) {
                             $created = (int) $parameters['created'];
                             if ($created >= $expires) {
                                 return false;
