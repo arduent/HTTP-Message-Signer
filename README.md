@@ -48,6 +48,7 @@ To sign a message, install the composer package guzzlehttp/psr7 and create an in
 
 ```php
 use HttpSignature\HttpMessageSigner;
+use HttpSignature\UnProcessableSignatureException;
 use GuzzleHttp\Psr7\Request;
 
 $request = new Request(
@@ -71,9 +72,18 @@ $signer = (new HttpMessageSigner())
     ->setTag('fediverse')           // optional app profile name
     ->setSignatureId('sig1')        // optional, default is sig1
     
-    
-$request = $signer->signRequest('("@method" "@path" "host" "date")', $request);
-$isValid = $signer->verifyRequest($request);
+try {   
+    $request = $signer->signRequest('("@method" "@path" "host" "date")', $request);
+}
+catch (UnProcessableSignatureException $exception) {
+    $whatHappened = $exception->getMessage();
+}
+try {    
+    $isValid = $signer->verifyRequest($request);
+} catch (UnProcessableSignatureException $exception) {
+    $isValid = false;
+    $whatHappened = $exception->getMessage();
+}
 ```
 
 See full examples in `/tests`.
@@ -95,12 +105,11 @@ and may include modifier parameters. These are represented as
 '("@query-param";name="foo" "header2";sf "header3" ...)'
 ```
 
-Parameters beginning with '@' are components derived from the HTTP request but may not be represented in the headers. Please review RFC9421 for precise definitions. 
-
+Field names beginning with '@' are components derived from the HTTP request but may not be represented in the headers. Please review RFC9421 for precise definitions. 
 
 Using the 'sf' parameter on a component will treat a signature component as a Structured Field when normalising the string. 
 
-However, parsing Structured Fields by adding the 'sf' parameter is likely to fail unless you know what `type` it is. A built-in table contains the type definition for a number of known stuctured header types. This list is probably incomplete. A method `addStructuredFieldTypes()` is available to add the type information so it can be successfullly parsed. This takes an array with key of the lowercase header name and a value; which is one of 'list', 'innerlist', 'parameters, 'dictionary', 'item'. If the header name is in the list and the 'sf' modifier is used, the header will be parsed as the Structured Field type indicated.
+However, parsing Structured Fields by adding the 'sf' parameter is likely to fail unless you know what `type` it is. A built-in table contains the type definition for a number of known stuctured header types. This list is probably incomplete. A method `addStructuredFieldTypes()` is available to add the type information so it can be successfully parsed. This takes an array with key of the lowercase header name and a value; which is one of 'list', 'innerlist', 'parameters, 'dictionary', 'item'. If the header name is in the list and the 'sf' modifier is used, the header will be parsed as the Structured Field type indicated.
 
 If a Structured Field is declared as type 'dictionary'; it is suitable for use with the RFC9421 `key` parameter. Using this parameter will fail if the Structured Field type is unknown or has not been registered.
 

@@ -170,7 +170,6 @@ final class HttpMessageSignerTest extends TestCase
 
     public function testManualInpectSignature(): void
     {
-
         $request = new Request(
             'POST',
             'https://api.example.com/resource?bat&baz=3',
@@ -182,7 +181,7 @@ final class HttpMessageSignerTest extends TestCase
             ],
             '{"message":"hello"}'
         );
-        // Use this method to add an additional header with same name as an existing header.
+        // Use this method to provide an additional header with the same name as an existing header.
         $request = $request->withHeader('Example-Header', 'value, with, lots');
         $request = $request->withAddedHeader('Example-Header', 'of, commas');
 
@@ -208,39 +207,5 @@ final class HttpMessageSignerTest extends TestCase
         $this->assertTrue($request->hasHeader('signature'), 'Signature header should exist');
     }
 
-    /*
-    public function testSignsAndVerifiesParsedRawHttpMessage(): void
-    {
-        $body = '{"message":"hello"}';
-
-        $raw = RawHttpBuilder::fromParts(
-            'POST', 
-            '/foo', 
-            [
-                'Host' => 'example.com',
-                'Date' => gmdate('D, d M Y H:i:s T'),
-            ], 
-            $body);
-
-        $parsed = HttpMessageSigner::parseHttpMessage($raw);
-        $headers = $parsed['headers'];
-        $method = $parsed['method'];
-        $path = $parsed['path'];
-
-        $headers['content-digest'] = $this->signer->createContentDigestHeader($body);
-
-        $signed = $this->signer->sign($headers, '("@method" "@path" "host" "content-digest")');
-
-        echo "\n\nManual Inspection\n\n";
-        var_dump($signed);
-
-        $this->assertArrayHasKey('signature', $signed);
-        $this->assertArrayHasKey('signature-input', $signed);
-
-        $isValid = $this->signer->verify($signed);
-
-        $this->assertTrue($isValid, 'Signed and parsed raw message should verify');
-    }
-    */
 }
 
