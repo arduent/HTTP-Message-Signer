@@ -136,10 +136,10 @@ class HttpMessageSigner
             foreach ($indices as $index) {
                 $member = $dict->getByIndex($index);
                 if (!$member) {
-                    throw new \Exception('Index ' . $index . ' not found');
+                    throw new UnProcessableSignatureException('Index ' . $index . ' not found');
                 }
                 if (in_array($member, $processedComponents, true)) {
-                    throw new \Exception('Duplicate member found');
+                    throw new UnProcessableSignatureException('Duplicate member found');
                 }
                 $processedComponents[] = $member;
                 $signatureComponents[] = $this->canonicalizeComponent($member, $headers, $interface);
@@ -186,10 +186,10 @@ class HttpMessageSigner
             foreach ($indices as $index) {
                 $member = $dict->getByIndex($index);
                 if (!$member) {
-                    throw new \Exception('Index ' . $index . ' not found');
+                    throw new UnProcessableSignatureException('Index ' . $index . ' not found');
                 }
                 if (in_array($member, $processedComponents, true)) {
-                    throw new \Exception('Duplicate member found');
+                    throw new UnProcessableSignatureException('Duplicate member found');
                 }
                 $processedComponents[] = $member;
                 $signatureComponents[] = $this->canonicalizeComponent($member, $headers, $interface);
@@ -239,7 +239,13 @@ class HttpMessageSigner
                        $signatureComponents[$dictName][] = $this->canonicalizeComponent($member, $headers, $interface);
                     }
                     $parameters = $this->extractParameters($members);
-
+                    if ($parameters) {
+                        foreach ($parameters as $key => $value) {
+                            if (!in_array($key, ['created', 'expires', 'nonce', 'alg', 'keyid', 'tag'])) {
+                                return false;
+                            }
+                        }
+                    }
                     if (isset($parameters['expires'])) {
                         $expires = (int) $parameters['expires'];
                         if ($expires < time()) {
@@ -308,12 +314,17 @@ class HttpMessageSigner
         $fieldName = $field->value();
         $parameters = $this->extractParameters($field);
         if (isset($parameters['bs']) && isset($parameters['sf'])) {
-            throw new \Exception('Cannot use both bs and sf');
+            throw new UnProcessableSignatureException('Cannot use both bs and sf');
         }
 
         $whichRequest = $interface;
-        if (isset($parameters['req']) && $interface instanceof ResponseInterface) {
-            $whichRequest = $this->getOriginalRequest();
+        if (isset($parameters['req'])) {
+            if ($interface instanceof ResponseInterface) {
+                $whichRequest = $this->getOriginalRequest();
+            }
+            else {
+                throw new UnProcessableSignatureException('missing request for req parameter');
+            }
         }
         $whichHeaders = $headers;
 
@@ -412,7 +423,7 @@ class HttpMessageSigner
                 return ['"_' . $fieldName . '_"', $queryParams[$fieldName] ? '"' . $queryParams[$fieldName] . '"' : ''];
             }
         }
-        throw new \Exception('Query string named parameter not set');
+        throw new UnProcessableSignatureException('Query string named parameter not set');
     }
 
     private function applyStructuredField(string $name, string $fieldValue): string
@@ -423,11 +434,11 @@ class HttpMessageSigner
                 $field = OuterList::fromHttpValue($fieldValue);
                 break;
             case 'innerlist':
-            $field = InnerList::fromHttpValue($fieldValue);
-            break;
+                $field = InnerList::fromHttpValue($fieldValue);
+                break;
             case 'parameters':
-            $field = Parameters::fromHttpValue($fieldValue);
-            break;
+                $field = Parameters::fromHttpValue($fieldValue);
+                break;
             case 'dictionary':
                 $field = Dictionary::fromHttpValue($fieldValue);
                 break;
@@ -455,7 +466,7 @@ class HttpMessageSigner
                 break;
         }
         if (!$field) {
-            return '';
+            throw new UnProcessableSignatureException('Unknown or unregistered structured field type');
         }
         return $field->toHttpValue();
     }
@@ -472,23 +483,13 @@ class HttpMessageSigner
         return '';
     }
 
-    private function applyByteSequence(string $fieldValue): string
-    {
-        return $fieldValue;
-    }
-
-    private function applyTrailer(string $fieldValue): string
-    {
-        return $fieldValue;
-    }
-
     private function createSignature(string $data): string
     {
         return match ($this->algorithm) {
             'rsa-sha256' => $this->rsaSign($data),
             'ed25519' => $this->ed25519Sign($data),
             'hmac-sha256' => base64_encode(hash_hmac('sha256', $data, $this->privateKey, true)),
-            default => throw new \RuntimeException("Unsupported algorithm: $this->algorithm")
+            default => throw new UnProcessableSignatureException("Unsupported algorithm: $this->algorithm")
         };
     }
 
@@ -511,7 +512,7 @@ class HttpMessageSigner
     private function rsaSign(string $data): string
     {
         if (!openssl_sign($data, $signature, $this->privateKey, OPENSSL_ALGO_SHA256)) {
-            throw new \RuntimeException("RSA signing failed");
+            throw new UnProcessableSignatureException("RSA signing failed");
         }
         return base64_encode($signature);
     }
@@ -519,7 +520,7 @@ class HttpMessageSigner
     private function ed25519Sign(string $data): string
     {
         if (!openssl_sign($data, $signature, $this->privateKey, "Ed25519")) {
-            throw new \RuntimeException("Ed25519 signing failed");
+            throw new UnProcessableSignatureException("Ed25519 signing failed");
         }
         return base64_encode($signature);
     }
@@ -567,7 +568,7 @@ class HttpMessageSigner
             }
         }
         if (!isset($algorithmHeaderString)) {
-            throw new \RuntimeException("Unsupported algorithm: $algorithm");
+            throw new UnProcessableSignatureException("Unsupported digest algorithm: $algorithm");
         }
         $digest = hash($algorithm, $body, true);
         /**
