@@ -2,6 +2,7 @@
 
 namespace HttpSignature;
 
+use Bakame\Http\StructuredFields\Dictionary;
 use Bakame\Http\StructuredFields\InnerList;
 use Bakame\Http\StructuredFields\Item;
 use Bakame\Http\StructuredFields\OuterList;
@@ -9,7 +10,7 @@ use Bakame\Http\StructuredFields\Parameters;
 use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
-use Bakame\Http\StructuredFields\Dictionary;
+use phpseclib\Crypt\RSA;
 
 class HttpMessageSigner
 {
@@ -45,6 +46,13 @@ class HttpMessageSigner
 
 
     /* PSR-7 interface to signing function */
+    /**
+     * @param string $coveredFields
+     * @param MessageInterface $interface
+     * @param RequestInterface|null $originalRequest
+     * @return MessageInterface
+     * @throws UnProcessableSignatureException
+     */
 
     public function signRequest(string $coveredFields, MessageInterface $interface, RequestInterface $originalRequest = null): MessageInterface
     {
@@ -66,6 +74,13 @@ class HttpMessageSigner
     }
 
     /* PSR-7 verify interface and also check body digest if included */
+    /**
+     * @param MessageInterface $interface
+     * @param RequestInterface|null $originalRequest
+     * @return bool
+     *
+     * @throws UnProcessableSignatureException
+     */
 
     public function verifyRequest(MessageInterface $interface, RequestInterface $originalRequest = null): bool
     {
@@ -486,7 +501,9 @@ class HttpMessageSigner
     private function createSignature(string $data): string
     {
         return match ($this->algorithm) {
+            'rsa-v1_5-sha256' => $this->rsaSign($data),
             'rsa-sha256' => $this->rsaSign($data),
+            'rsa-pss-sha512' => $this->pssSign($data),
             'ed25519' => $this->ed25519Sign($data),
             'hmac-sha256' => base64_encode(hash_hmac('sha256', $data, $this->privateKey, true)),
             default => throw new UnProcessableSignatureException("Unsupported algorithm: $this->algorithm")
@@ -496,8 +513,11 @@ class HttpMessageSigner
     private function verifySignature(string $data, string $signature, string $alg): bool
     {
         return match ($alg) {
-            'rsa-sha256' => openssl_verify($data, $signature, $this->publicKey, 
-                                                OPENSSL_ALGO_SHA256) === 1,
+            'rsa-v1_5-sha256' => openssl_verify($data, $signature, $this->publicKey,
+                    OPENSSL_ALGO_SHA256) === 1,
+            'rsa-sha256' => openssl_verify($data, $signature, $this->publicKey,
+                    OPENSSL_ALGO_SHA256) === 1,
+            'rsa-pss-sha512' => $this->pssVerify($data, $signature),
             'ed25519' => openssl_verify($data, $signature, $this->publicKey, "Ed25519") === 1,
             'hmac-sha256' => hash_equals(
                 base64_encode(hash_hmac('sha256', $data, $this->privateKey, true)),
@@ -517,12 +537,46 @@ class HttpMessageSigner
         return base64_encode($signature);
     }
 
+    private function pssSign(string $data): string
+    {
+        $rsa = new RSA();
+        if ($rsa->loadKey($this->privateKey) !== true) {
+            throw new UnprocessableSignatureException("PSS loadkey failure");
+        };
+        $rsa->setHash('sha512');
+        $rsa->setMGFHash('sha512');
+        $rsa->setSignatureMode(RSA::SIGNATURE_PSS);
+        try {
+            $signatureBytes = $rsa->sign($data);
+        } catch (\Exception $exception) {
+            throw new UnprocessableSignatureException($exception->getMessage());
+        }
+        return base64_encode($signatureBytes);
+    }
+
     private function ed25519Sign(string $data): string
     {
         if (!openssl_sign($data, $signature, $this->privateKey, "Ed25519")) {
             throw new UnProcessableSignatureException("Ed25519 signing failed");
         }
         return base64_encode($signature);
+    }
+
+    private function pssVerify(string $data, $signature): bool
+    {
+        $rsa = new RSA();
+        if ($rsa->loadKey($this->publicKey) !== true) {
+            throw new UnprocessableSignatureException("PSS loadkey failure");
+        };
+        $rsa->setHash('sha512');
+        $rsa->setMGFHash('sha512');
+        $rsa->setSignatureMode(RSA::SIGNATURE_PSS);
+        try {
+            $verified = $rsa->verify($data, $signature);
+        } catch (\Exception $exception) {
+            $verified = false;
+        }
+        return $verified;
     }
 
     /* parse a structed dict */
