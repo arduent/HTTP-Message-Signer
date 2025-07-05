@@ -25,7 +25,7 @@ final class HttpMessageSignerTest extends TestCase
             ->setPrivateKey($this->privateKey)
             ->setPublicKey($this->publicKey)
             ->setKeyId('test-key')
-            ->setAlgorithm('rsa-sha256')
+            ->setAlgorithm('rsa-v1_5-sha256')
             ->setCreated(time());
 
     }
