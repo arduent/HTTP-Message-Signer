@@ -25,7 +25,7 @@ final class HttpMessageSignerTest extends TestCase
             ->setPrivateKey($this->privateKey)
             ->setPublicKey($this->publicKey)
             ->setKeyId('test-key')
-            ->setAlgorithm('rsa-sha256')
+            ->setAlgorithm('rsa-v1_5-sha256')
             ->setCreated(time());
 
     }
@@ -64,6 +64,36 @@ final class HttpMessageSignerTest extends TestCase
 
         $isValid = $this->signer->verifyRequest($request);
         $this->assertTrue($isValid, 'Signed request should be valid');
+    }
+
+    public function testPssSignatures(): void
+    {
+        $this->privateKey = file_get_contents(__DIR__ . '/keys/pss-private.pem');
+        $this->publicKey = file_get_contents(__DIR__ . '/keys/pss-public.pem');
+
+        $this->signer = (new HttpMessageSigner())
+            ->setPrivateKey($this->privateKey)
+            ->setPublicKey($this->publicKey)
+            ->setKeyId('test-key')
+            ->setAlgorithm('rsa-pss-sha512')
+            ->setCreated(time());
+
+        $body = '{"message":"hello"}';
+        $digest = $this->signer->createContentDigestHeader($body);
+
+        $request = new Request(
+            'POST',
+            'https://example.com/api',
+            [
+                'Host' => 'example.com',
+                'Content-Digest' => $digest
+            ],
+            $body
+        );
+
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")', $request);
+        $this->assertTrue($this->signer->verifyRequest($signed));
+
     }
 
     public function testSignsAndVerifiesWithBodyDigest(): void

@@ -7,7 +7,9 @@
     "psr/http-message": "^2.0",
     "guzzlehttp/psr7": "^2.0",
     "bakame/http-structured-fields": "^2.0",
-    "ext-openssl": "*"
+    "ext-openssl": "*",
+    "phpseclib/phpseclib": "~3.0",
+    "phpseclib/phpseclib2_compat": "^1.0"
   },
   "require-dev": {
     "phpunit/phpunit": "^10.0"
