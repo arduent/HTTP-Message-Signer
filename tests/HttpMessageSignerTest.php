@@ -71,6 +71,7 @@ final class HttpMessageSignerTest extends TestCase
         $this->privateKey = file_get_contents(__DIR__ . '/keys/pss-private.pem');
         $this->publicKey = file_get_contents(__DIR__ . '/keys/pss-public.pem');
 
+
         $this->signer = (new HttpMessageSigner())
             ->setPrivateKey($this->privateKey)
             ->setPublicKey($this->publicKey)
@@ -78,7 +79,7 @@ final class HttpMessageSignerTest extends TestCase
             ->setAlgorithm('rsa-pss-sha512')
             ->setCreated(time());
 
-        $body = '{"message":"hello"}';
+        $body = '{"hello": "world"}';
         $digest = $this->signer->createContentDigestHeader($body);
 
         $request = new Request(
@@ -91,7 +92,7 @@ final class HttpMessageSignerTest extends TestCase
             $body
         );
 
-        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")', $request);
+        $signed = $this->signer->signRequest('("@method" "@target-uri" "host" "content-digest")', $request);
         $this->assertTrue($this->signer->verifyRequest($signed));
 
     }

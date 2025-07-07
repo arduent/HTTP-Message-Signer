@@ -278,21 +278,6 @@ class HttpMessageSigner
         }
 
         $sigDict = $this->parseStructuredDict($headers['signature']);
-        if ($sigDict->isNotEmpty()) {
-            $indices = $sigDict->indices();
-            foreach ($indices as $index) {
-                [$dictName, $members] = $sigDict->getByIndex($index);
-                if ($members instanceof Item) {
-                    $signatures[$dictName] = $members->value();
-                }
-                if ($members instanceof InnerList) {
-                    $innerIndices = $members->indices();
-                    foreach ($innerIndices as $innerIndex) {
-                        $signatures[$dictName][] = $members->getByIndex($innerIndex);
-                    }
-                }
-            }
-        }
 
         foreach ($signatureComponents as $dictName => $dictComponents) {
             $namedSignatureComponents = $signatureComponents[$dictName];
@@ -565,7 +550,7 @@ class HttpMessageSigner
     private function pssVerify(string $data, $signature): bool
     {
         $rsa = new RSA();
-        if ($rsa->loadKey($this->publicKey) !== true) {
+        if (!$rsa->loadKey($this->publicKey)) {
             throw new UnprocessableSignatureException("PSS loadkey failure");
         };
         $rsa->setHash('sha512');
