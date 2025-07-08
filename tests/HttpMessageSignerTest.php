@@ -21,11 +21,12 @@ final class HttpMessageSignerTest extends TestCase
         $request = new Request('GET', '/');
         $response = new Response(200, ['Content-Type' => 'text/plain']);
 
-        $this->signer = (new HttpMessageSigner($request, $response))
+        $this->signer = (new HttpMessageSigner())
             ->setPrivateKey($this->privateKey)
             ->setPublicKey($this->publicKey)
             ->setKeyId('test-key')
-            ->setAlgorithm('rsa-sha256');
+            ->setAlgorithm('rsa-v1_5-sha256')
+            ->setCreated(time());
 
     }
 
@@ -35,22 +36,64 @@ final class HttpMessageSignerTest extends TestCase
             'POST',
             'https://api.example.com/resource?bat&baz=3',
             [
-                'Host' => ['api.example.com'],
-                'Date' => [gmdate('D, d M Y H:i:s T')],
+                'Host' => 'api.example.com',
+                'Date' => gmdate('D, d M Y H:i:s T'),
+                'x-test' => '',
+                'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
             ]
         );
+        // Use this method to provide an additional header with same name as an existing header.
+        $request = $request->withHeader('Example-Header', 'value, with, lots');
+        $request = $request->withAddedHeader('Example-Header', 'of, commas');
+        $request = $request->withHeader('If-None-Match', 'W/"abcdef", "ghijkl", *');
         /**
          * Whenever we modify the $request, overwrite the HttpMessageSigner instance with an updated copy.
          */
-        $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest('("@method" "@path" "@request-target" "host" "date" "@query-param";name="baz" "@query-param";name="bat")');
-        $this->signer->setRequest($signed);
-        $this->assertTrue($signed->hasHeader('signature'));
-        $this->assertTrue($signed->hasHeader('signature-input'));
+        $coveredFields = '("example-header";bs "@method" "@path" "host" "if-none-match";sf "date" "date";sf "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "example-dict" "example-dict";sf "example-dict";key="a" "example-dict";key="b" "example-dict";key="c" "example-dict";key="d")';
+        $this->signer->addStructuredFieldType(['example-dict' => 'dictionary']);
+        $request = $this->signer->signRequest($coveredFields, $request);
+        $this->assertTrue($request->hasHeader('signature'));
+        $this->assertTrue($request->hasHeader('signature-input'));
+        $normalised = explode("\n", $this->signer->calculateSignatureBase($this->signer->getHeaders($request), $coveredFields, $request));
+
+        $this->assertContains('"@path": /resource', $normalised);
+        $this->assertContains('"_bat_": ', $normalised);
+
+        $this->assertEquals($request->getRequestTarget(), '/resource?bat&baz=3');
 
 
-        $isValid = $this->signer->verifyRequest($signed);
+        $isValid = $this->signer->verifyRequest($request);
         $this->assertTrue($isValid, 'Signed request should be valid');
+    }
+
+    public function testPssSignatures(): void
+    {
+        $this->privateKey = file_get_contents(__DIR__ . '/keys/pss-private.pem');
+        $this->publicKey = file_get_contents(__DIR__ . '/keys/pss-public.pem');
+
+        $this->signer = (new HttpMessageSigner())
+            ->setPrivateKey($this->privateKey)
+            ->setPublicKey($this->publicKey)
+            ->setKeyId('test-key')
+            ->setAlgorithm('rsa-pss-sha512')
+            ->setCreated(time());
+
+        $body = '{"message":"hello"}';
+        $digest = $this->signer->createContentDigestHeader($body);
+
+        $request = new Request(
+            'POST',
+            'https://example.com/api',
+            [
+                'Host' => 'example.com',
+                'Content-Digest' => $digest
+            ],
+            $body
+        );
+
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")', $request);
+        $this->assertTrue($this->signer->verifyRequest($signed));
+
     }
 
     public function testSignsAndVerifiesWithBodyDigest(): void
@@ -61,13 +104,14 @@ final class HttpMessageSignerTest extends TestCase
         $request = new Request(
             'POST',
             'https://example.com/api',
-            ['Host' => ['example.com'], 'Content-Digest' => [$digest]],
+            [
+                'Host' => 'example.com',
+                'Content-Digest' => $digest
+            ],
             $body
         );
 
-        $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")');
-        $this->signer->setRequest($signed);
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")', $request);
         $this->assertTrue($this->signer->verifyRequest($signed));
     }
 
@@ -82,12 +126,14 @@ final class HttpMessageSignerTest extends TestCase
         $request = new Request(
             'POST',
             'https://example.com/api',
-            ['Host' => ['example.com'], 'Content-Digest' => [$digest]],
+            [
+                'Host' => 'example.com',
+                'Content-Digest' => $digest
+            ],
             $tamperedBody
         );
 
-        $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")');
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "content-digest")', $request);
         $this->assertFalse($this->signer->verifyRequest($signed),
                 'Digest mismatch should cause verification to fail');
     }
@@ -99,17 +145,15 @@ final class HttpMessageSignerTest extends TestCase
             'POST',
             'https://api.example.com/resource',
             [
-                'Host' => ['api.example.com'],
-                'Date' => [gmdate('D, d M Y H:i:s T')],
+                'Host' => 'api.example.com',
+                'Date' => gmdate('D, d M Y H:i:s T'),
             ]
         );
 
-        $this->signer->setRequest($request);
-        $signed = $this->signer->signRequest('("@method" "@path" "host" "date")');
-        $this->signer->setRequest($signed);
-        $tampered = $signed->withHeader('Host', 'attacker.com');
-        $this->signer->setRequest($tampered);
 
+        $signed = $this->signer->signRequest('("@method" "@path" "host" "date")', $request);
+
+        $tampered = $signed->withHeader('Host', 'attacker.com');
         $this->assertFalse($this->signer->verifyRequest($tampered), 
                                 'Tampered request should be invalid');
     }
@@ -120,12 +164,11 @@ final class HttpMessageSignerTest extends TestCase
             'POST',
             'https://api.example.com/resource',
             [
-                'Host' => ['api.example.com'],
-                'Date' => [gmdate('D, d M Y H:i:s T')],
+                'Host' => 'api.example.com',
+                'Date' => gmdate('D, d M Y H:i:s T'),
             ]
         );
 
-        $this->signer->setRequest($request);
         $this->assertFalse($this->signer->verifyRequest($request),
                                 'Unsigned request should be invalid');
     }
@@ -157,21 +200,26 @@ final class HttpMessageSignerTest extends TestCase
 
     public function testManualInpectSignature(): void
     {
-
         $request = new Request(
             'POST',
-            'https://api.example.com/resource',
+            'https://api.example.com/resource?bat&baz=3',
             [
-                'Host' => ['api.example.com'],
-                'Date' => [gmdate('D, d M Y H:i:s T')],
+                'Host' => 'api.example.com',
+                'Date' => gmdate('D, d M Y H:i:s T'),
+                'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
+                'If-None-Match' => 'W/"abcdef", "ghijkl", *',
             ],
             '{"message":"hello"}'
         );
+        // Use this method to provide an additional header with the same name as an existing header.
+        $request = $request->withHeader('Example-Header', 'value, with, lots');
+        $request = $request->withAddedHeader('Example-Header', 'of, commas');
 
-        $this->signer->setRequest($request);
+        $coveredFields = '("@method" "@path" "if-none-match";sf "host" "date" "date";sf "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "content-digest" "example-dict" "example-dict";sf "example-dict";key="a" "example-dict";key="b" "example-dict";key="c" "example-dict";key="d" "example-header";bs)';
+        $this->signer->addStructuredFieldType(['example-dict' => 'dictionary']);
         $digest = $this->signer->createContentDigestHeader((string) $request->getBody());
         $request = $request->withHeader('Content-Digest', $digest);
-        $request = $this->signer->signRequest('("@method" "@path" "host" "date" "content-digest")');
+        $request = $this->signer->signRequest($coveredFields, $request);
 
         echo "\n\nManual Inspection\n\n";
 
@@ -179,41 +227,15 @@ final class HttpMessageSignerTest extends TestCase
             echo $name . ": " . implode(', ', $values) . PHP_EOL;
         }
 
+        echo "\n\nNormalised signature components\n\n";
+
+        $normalised = explode("\n", $this->signer->calculateSignatureBase($this->signer->getHeaders($request), $coveredFields, $request));
+        foreach ($normalised as $component) {
+            echo $component . PHP_EOL;
+        }
         // Optional assertion to keep PHPUnit happy
         $this->assertTrue($request->hasHeader('signature'), 'Signature header should exist');
     }
- 
-    public function testSignsAndVerifiesParsedRawHttpMessage(): void
-    {
-        $body = '{"message":"hello"}';
 
-        $raw = RawHttpBuilder::fromParts(
-            'POST', 
-            '/foo', 
-            [
-                'Host' => 'example.com',
-                'Date' => gmdate('D, d M Y H:i:s T'),
-            ], 
-            $body);
-
-        $parsed = HttpMessageSigner::parseHttpMessage($raw);
-        $headers = $parsed['headers'];
-        $method = $parsed['method'];
-        $path = $parsed['path'];
-
-        $headers['content-digest'] = $this->signer->createContentDigestHeader($body);
-
-        $signed = $this->signer->sign($headers, '("@method" "@path" "host" "content-digest")');
-
-        echo "\n\nManual Inspection\n\n";
-        var_dump($signed);
-
-        $this->assertArrayHasKey('signature', $signed);
-        $this->assertArrayHasKey('signature-input', $signed);
-
-        $isValid = $this->signer->verify($signed);
-
-        $this->assertTrue($isValid, 'Signed and parsed raw message should verify');
-    }
 }
 
