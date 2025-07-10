@@ -289,7 +289,7 @@ class HttpMessageSigner
             }
 
             $decodedSig = base64_decode(trim($sigDict[$dictName]->__toString(), ':'));
-            return $this->verifySignature($signatureBase, $decodedSig, $params['alg'] ?? $this->algorithm);
+            return $this->verifySignature($signatureBase, $decodedSig, $parameters['alg'] ?? $this->algorithm);
         }
         return false;
     }
@@ -364,12 +364,17 @@ class HttpMessageSigner
 
     private function getFieldValue($fieldName, MessageInterface $interface, $headers, $parameters ): array
     {
+        // The $interface has no single method to extract this, so build it from
+        // the avilable components.
+        $targetUri = $interface->getUri()->getScheme() . '://' . $interface->getUri()->getAuthority()
+        . $interface->getUri()->getPath() . $interface->getUri()->getQuery();
+
         $value = match ($fieldName) {
             '@signature-params' => ['', ''],
             '@method' => ['"@method"', strtoupper($interface->getMethod())],
             '@authority' => ['"@authority"', $interface->getUri()->getAuthority()],
             '@scheme' => ['"@scheme"', strtolower($interface->getUri()->getScheme())],
-            '@target-uri' => ['"target-uri"', $interface->getUri()->__toString()],
+            '@target-uri' => ['"@target-uri"', $targetUri],
             '@request-target' => ['"@request-target"', $interface->getRequestTarget()],
             '@path' => ['"@path"', $interface->getUri()->getPath()],
             '@query' => ['"@query"', $interface->getUri()->getQuery()],
@@ -487,6 +492,7 @@ class HttpMessageSigner
     {
         return match ($this->algorithm) {
             'rsa-v1_5-sha256' => $this->rsaSign($data),
+            'rsa-v1_5-sha512' => $this->rsa512Sign($data),
             'rsa-sha256' => $this->rsaSign($data),
             'rsa-pss-sha512' => $this->pssSign($data),
             'ed25519' => $this->ed25519Sign($data),
@@ -500,6 +506,8 @@ class HttpMessageSigner
         return match ($alg) {
             'rsa-v1_5-sha256' => openssl_verify($data, $signature, $this->publicKey,
                     OPENSSL_ALGO_SHA256) === 1,
+            'rsa-v1_5-sha512' => openssl_verify($data, $signature, $this->publicKey,
+                    OPENSSL_ALGO_SHA512) === 1,
             'rsa-sha256' => openssl_verify($data, $signature, $this->publicKey,
                     OPENSSL_ALGO_SHA256) === 1,
             'rsa-pss-sha512' => $this->pssVerify($data, $signature),
@@ -517,6 +525,13 @@ class HttpMessageSigner
     private function rsaSign(string $data): string
     {
         if (!openssl_sign($data, $signature, $this->privateKey, OPENSSL_ALGO_SHA256)) {
+            throw new UnProcessableSignatureException("RSA signing failed");
+        }
+        return base64_encode($signature);
+    }
+    private function rsa512Sign(string $data): string
+    {
+        if (!openssl_sign($data, $signature, $this->privateKey, OPENSSL_ALGO_SHA512)) {
             throw new UnProcessableSignatureException("RSA signing failed");
         }
         return base64_encode($signature);
