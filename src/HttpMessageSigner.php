@@ -365,15 +365,15 @@ class HttpMessageSigner
     private function getFieldValue($fieldName, MessageInterface $interface, $headers, $parameters ): array
     {
         if ($interface instanceof RequestInterface) {
-            // The $interface has no single method to extract this, so build it from
-            // the avilable components.
-            $targetUri = $interface->getUri()->getScheme() . '://' . $interface->getUri()->getAuthority()
+            // The $interface has no single method to extract the target-uri, so build it from
+            // the available components.
+            $targetUri = $interface->getUri()->getScheme() . '://' . $this->getAuthority($interface)
                 . $interface->getUri()->getPath() . $interface->getUri()->getQuery();
 
             $value = match ($fieldName) {
                 '@signature-params' => ['', ''],
                 '@method' => ['"@method"', strtoupper($interface->getMethod())],
-                '@authority' => ['"@authority"', $interface->getUri()->getAuthority()],
+                '@authority' => ['"@authority"', $this->getAuthority($interface)],
                 '@scheme' => ['"@scheme"', strtolower($interface->getUri()->getScheme())],
                 '@target-uri' => ['"@target-uri"', $targetUri],
                 '@request-target' => ['"@request-target"', $interface->getRequestTarget()],
@@ -392,6 +392,23 @@ class HttpMessageSigner
         }
 
         return $value;
+    }
+
+    /**
+     * The interface getAuthority() method requires additional filtering for RFC-9421.
+     * It must be lowercase and must not contain a port value.
+     * @param MessageInterface $interface
+     * @return string
+     * @throws UnprocessableSignatureException
+     */
+    protected function getAuthority(MessageInterface $interface): string
+    {
+        if (method_exists($interface, 'getUri')) {
+            $authority = strtolower($interface->getUri()->getAuthority());
+            $authority = explode($authority, ':');
+            return $authority[0];
+        }
+        throw new UnprocessableSignatureException('Unable to extract authority from MessageInterface');
     }
 
     /**
