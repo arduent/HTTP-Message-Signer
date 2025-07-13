@@ -364,24 +364,33 @@ class HttpMessageSigner
 
     private function getFieldValue($fieldName, MessageInterface $interface, $headers, $parameters ): array
     {
-        // The $interface has no single method to extract this, so build it from
-        // the avilable components.
-        $targetUri = $interface->getUri()->getScheme() . '://' . $interface->getUri()->getAuthority()
-        . $interface->getUri()->getPath() . $interface->getUri()->getQuery();
+        if ($interface instanceof RequestInterface) {
+            // The $interface has no single method to extract this, so build it from
+            // the avilable components.
+            $targetUri = $interface->getUri()->getScheme() . '://' . $interface->getUri()->getAuthority()
+                . $interface->getUri()->getPath() . $interface->getUri()->getQuery();
 
-        $value = match ($fieldName) {
-            '@signature-params' => ['', ''],
-            '@method' => ['"@method"', strtoupper($interface->getMethod())],
-            '@authority' => ['"@authority"', $interface->getUri()->getAuthority()],
-            '@scheme' => ['"@scheme"', strtolower($interface->getUri()->getScheme())],
-            '@target-uri' => ['"@target-uri"', $targetUri],
-            '@request-target' => ['"@request-target"', $interface->getRequestTarget()],
-            '@path' => ['"@path"', $interface->getUri()->getPath()],
-            '@query' => ['"@query"', $interface->getUri()->getQuery()],
-            '@query-param' => $this->getQueryParam($interface, $parameters) ?? ['', ''],
-            '@status' => ['"@status"', '"@status": ' . $interface->getStatusCode()],
-            default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
-        };
+            $value = match ($fieldName) {
+                '@signature-params' => ['', ''],
+                '@method' => ['"@method"', strtoupper($interface->getMethod())],
+                '@authority' => ['"@authority"', $interface->getUri()->getAuthority()],
+                '@scheme' => ['"@scheme"', strtolower($interface->getUri()->getScheme())],
+                '@target-uri' => ['"@target-uri"', $targetUri],
+                '@request-target' => ['"@request-target"', $interface->getRequestTarget()],
+                '@path' => ['"@path"', $interface->getUri()->getPath()],
+                '@query' => ['"@query"', $interface->getUri()->getQuery()],
+                '@query-param' => $this->getQueryParam($interface, $parameters) ?? ['', ''],
+                default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
+            };
+        }
+        else {
+            $value = match ($fieldName) {
+                '@signature-params' => ['', ''],
+                '@status' => ['"@status"', '"@status": ' . $interface->getStatusCode()],
+                default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
+            };
+        }
+
         return $value;
     }
 

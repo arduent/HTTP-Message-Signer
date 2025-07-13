@@ -120,7 +120,7 @@ To sign or verify an HTTP Response, use a ResponseInterface as the provided `$in
 ## Known issues
 Currently not implemented is the special handling of the `cookie` and `set-cookie` headers when using the `sf` modifier. For further information please see https://httpwg.org/http-extensions/draft-ietf-httpbis-retrofit.html and https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis-20 (or later). It is planned to implement this once RFC6265bis is finalised as a new RFC.
 
-Also not currently implemented are some of the many signature algorithms; as we're currently focused primarily on rsa-sha256 and ed25519. 
+Also not currently implemented are some of the signature algorithms; as we're currently focused primarily on rsa-sha256 and ed25519; and coverage of some algorithms in PHP is limited. 
 
 Pull requests welcome. 
 
