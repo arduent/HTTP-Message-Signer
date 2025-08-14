@@ -18,9 +18,7 @@ Requirements:
 
 ## Note
 
-This is Alpha version please report issues. Thanks. Tested on PHP 8.4, should run fine on 8.1+
-
-2025-05-28: Partially reversed the constructor change. 
+Please report issues. Thanks. Tested on PHP 8.4, should run fine on 8.1+
 
 
 ## Installation
@@ -40,7 +38,45 @@ use GuzzleHttp\Psr7\ServerRequest;
 $request = ServerRequest::fromGlobals();
 ```
 
-This would typically be used to verify a message. 
+This would typically be used to verify a message.
+
+If your project uses URL rewriting (such as Apache's 'mod_rewrite'), you may have difficulties verifying some request parameters using a PSR7 request generated using ServerRequest::fromGlobals(). In that case, you might wish instead to generate a minimal PSR7 Request Message which is populated from the original request URI and which is not affected by URL re-writing:
+
+```
+use GuzzleHttp\Psr7\Request;
+
+function createRequest(string $baseurl)
+{
+    /**
+    * $baseurl for your site e.g. 'https://example.com'
+    */
+    
+    if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+        $input = file_get_contents('php://input');
+    }
+    
+    $headers = [];
+    if (isset($_SERVER['CONTENT_TYPE'])) {
+      $headers['content-type'] = $_SERVER['CONTENT_TYPE'];
+    }
+    if (isset($_SERVER['CONTENT_LENGTH'])) {
+      $headers['content-length'] = $_SERVER['CONTENT_LENGTH'];
+    }
+    foreach ($_SERVER as $k => $v) {
+      if (str_starts_with($k, 'HTTP_')) {
+          $field = str_replace('_', '-', strtolower(substr($k, 5)));
+          $headers[$field] = $v;
+      }
+    }
+    
+    return new Request(
+      $_SERVER['REQUEST_METHOD'],
+        $baseurl . $_SERVER['REQUEST_URI']),
+        $headers,
+        $input ?? null
+      );
+ }
+```
 
 To sign a message, install the composer package guzzlehttp/psr7 and create an instance of `Request`.
 
