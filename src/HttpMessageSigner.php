@@ -405,7 +405,7 @@ class HttpMessageSigner
     {
         if (method_exists($interface, 'getUri')) {
             $authority = strtolower($interface->getUri()->getAuthority());
-            $authority = explode($authority, ':');
+            $authority = explode(':', $authority);
             return $authority[0];
         }
         throw new UnprocessableSignatureException('Unable to extract authority from MessageInterface');
