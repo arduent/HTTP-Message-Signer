@@ -18,26 +18,24 @@ final class HttpMessageSignerTest extends TestCase
         $this->privateKey = file_get_contents(__DIR__ . '/keys/private.pem');
         $this->publicKey = file_get_contents(__DIR__ . '/keys/public.pem');
 
-        $request = new Request('GET', '/');
-        $response = new Response(200, ['Content-Type' => 'text/plain']);
-
         $this->signer = (new HttpMessageSigner())
             ->setPrivateKey($this->privateKey)
             ->setPublicKey($this->publicKey)
             ->setKeyId('test-key')
             ->setAlgorithm('rsa-v1_5-sha256')
-            ->setCreated(time());
-
+            ->setCreated(time()
+        );
     }
 
     public function testSignsAndVerifiesValidRequest(): void
     {
+        $date = gmdate('D, d M Y H:i:s T');
         $request = new Request(
             'POST',
             'https://api.example.com/resource?bat&baz=3',
             [
                 'Host' => 'api.example.com',
-                'Date' => gmdate('D, d M Y H:i:s T'),
+                'Date' => $date,
                 'x-test' => '',
                 'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
             ]
@@ -56,11 +54,25 @@ final class HttpMessageSignerTest extends TestCase
         $this->assertTrue($request->hasHeader('signature-input'));
         $normalised = explode("\n", $this->signer->calculateSignatureBase($this->signer->getHeaders($request), $coveredFields, $request));
 
+        $this->assertContains('"example-header";bs: :dmFsdWUsIHdpdGgsIGxvdHM=:, :b2YsIGNvbW1hcw==:', $normalised);
+        $this->assertContains('"@method": POST', $normalised);
         $this->assertContains('"@path": /resource', $normalised);
+        $this->assertContains('"host": api.example.com', $normalised);
+        $this->assertContains('"if-none-match";sf: "abcdef"; w, "ghijkl", *', $normalised);
+        $this->assertContains('"date": ' . $date, $normalised);
+        $this->assertContains('"date";sf: @' . strtotime($date), $normalised);
+        $this->assertContains('"@request-target": /resource?bat&baz=3', $normalised);
+        $this->assertContains('"@target-uri": https://api.example.com/resource?bat&baz=3', $normalised);
+        $this->assertContains('"_baz_": "3"', $normalised);
         $this->assertContains('"_bat_": ', $normalised);
+        $this->assertContains('"example-dict": a=1,    b=2;x=1;y=2,   c=(a   b   c), d', $normalised);
+        $this->assertContains('"example-dict";sf: a=1, b=2;x=1;y=2, c=(a b c), d', $normalised);
+        $this->assertContains('"example-dict";key="a": 1', $normalised);
+        $this->assertContains('"example-dict";key="b": 2;x=1;y=2', $normalised);
+        $this->assertContains('"example-dict";key="c": (a b c)', $normalised);
+        $this->assertContains('"example-dict";key="d": ?1', $normalised);
 
         $this->assertEquals($request->getRequestTarget(), '/resource?bat&baz=3');
-
 
         $isValid = $this->signer->verifyRequest($request);
         $this->assertTrue($isValid, 'Signed request should be valid');

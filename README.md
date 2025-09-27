@@ -6,14 +6,16 @@ A PHP 8.1+ library for signing and verifying HTTP messages (requests or response
 This is a fork of quantificant/http-message-signer
 
 Supports:
-- RSA-SHA256
+- RSA-v1.5-SHA256
 - Ed25519
 - HMAC-SHA256
+- RSA-PSS-SHA512
 - PSR-7 requests (e.g., Guzzle)
-- Optionally (recommended) calculate and verify body digest (content-digest header)
+- Automatically verify body digest (content-digest header) -- if present
 
 Requirements:
 - bakame/http-structured-fields
+- phpseclib/phpseclib
 - psr/http-message
 
 ## Note
