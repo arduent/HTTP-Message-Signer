@@ -100,11 +100,11 @@ $request = new Request(
 $signer = (new HttpMessageSigner())
     ->setPrivateKey($privateKey) // only needed for signing
     ->setPublicKey($publicKey)   // only needed for verifying
-    ->setKeyId('https://example.com/dave#rsaKey')  // required
-    ->setAlgorithm('rsa-sha256')    // required
+    ->setKeyId('https://example.com/dave#rsaKey')  // required when signing
+    ->setAlgorithm('rsa-v1_5-sha256')    // required when signing
     ->setCreated(time())            // recommended
-    ->setExpires(time() + 300)      // optional, contentious
-    ->setNonce('xJJ9;ro.3*kidney`') // optional one-time token
+    ->setExpires(time() + 300)      // optional
+    ->setNonce('xJJ9;ro.3*kidney`') // optional one-time token, **uniqueness not checked**
     ->setTag('fediverse')           // optional app profile name
     ->setSignatureId('sig1')        // optional, default is sig1
     
@@ -126,7 +126,7 @@ See full examples in `/tests`.
 
 ## Structured Fields
 
-RFC9421 makes heavy use of HTTP Structured Fields (RFC8941/RFC9651). The syntax is very precise and unforgiving.
+RFC9421 makes heavy use of HTTP Structured Fields (RFC8941/RFC9651). 
 
 The signRequest() method takes a structured InnerList of components to sign. These may be headers or derived fields.
 The string will look something like the following (where `...` represents additional components):
@@ -145,7 +145,7 @@ Field names beginning with '@' are components derived from the HTTP request but 
 
 Using the 'sf' parameter on a component will treat a signature component as a Structured Field when normalising the string. 
 
-However, parsing Structured Fields by adding the 'sf' parameter is likely to fail unless you know what `type` it is. A built-in table contains the type definition for a number of known stuctured header types. This list is probably incomplete. A method `addStructuredFieldTypes()` is available to add the type information so it can be successfully parsed. This takes an array with key of the lowercase header name and a value; which is one of 'list', 'innerlist', 'parameters, 'dictionary', 'item'. If the header name is in the list and the 'sf' modifier is used, the header will be parsed as the Structured Field type indicated.
+However, parsing arbitrary Structured Fields by adding the 'sf' parameter is likely to fail unless you know what `type` it is. A built-in table contains the type definition for a number of known stuctured header types. This list is probably incomplete. A method `addStructuredFieldTypes()` is available to add the type information so it can be successfully parsed. This takes an array with key of the lowercase header name and a value; which is one of 'list', 'innerlist', 'parameters, 'dictionary', 'item'. If the header name is in the list and the 'sf' modifier is used, the header will be parsed as the Structured Field type indicated.
 
 If a Structured Field is declared as type 'dictionary'; it is suitable for use with the RFC9421 `key` parameter. Using this parameter will fail if the Structured Field type is unknown or has not been registered.
 
