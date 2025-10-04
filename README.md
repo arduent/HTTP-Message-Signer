@@ -1,22 +1,27 @@
 # HTTP Message Signer (RFC 9421)
 
-
 A PHP 8.1+ library for signing and verifying HTTP messages (requests or responses) per [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421).
 
 This is a fork of quantificant/http-message-signer
 
 Supports:
-- RSA-v1.5-SHA256
-- Ed25519
-- HMAC-SHA256
-- RSA-PSS-SHA512
+
 - PSR-7 requests (e.g., Guzzle)
 - Automatically verify body digest (content-digest header) -- if present
-
+- Algorithm support:
+  - 'rsa-v1_5-sha256'
+  - 'rsa-v1_5-sha512'
+  - 'rsa-pss-sha512'
+  - 'ed25519'
+  - 'hmac-sha256'
+  - 'ecdsa-p256-sha256'
+  - 'ecdsa-p384-sha384'
+  
 Requirements:
 - bakame/http-structured-fields
 - phpseclib/phpseclib
 - psr/http-message
+- paragonie/easy-ecc
 
 ## Note
 
@@ -47,6 +52,9 @@ If your project uses URL rewriting (such as Apache's 'mod_rewrite'), you may hav
 ```
 use GuzzleHttp\Psr7\Request;
 
+// Generate PSR7 request from current HTTP request, which is NOT
+// affected by the use of Apache mod-rewrite.
+ 
 function createRequest(string $baseurl)
 {
     /**
@@ -103,10 +111,10 @@ $signer = (new HttpMessageSigner())
     ->setPrivateKey($privateKey) // only needed for signing
     ->setPublicKey($publicKey)   // only needed for verifying
     ->setKeyId('https://example.com/dave#rsaKey')  // required when signing
-    ->setAlgorithm('rsa-v1_5-sha256')    // required when signing
+    ->setAlgorithm('rsa-v1_5-sha256')    // typically required when signing
     ->setCreated(time())            // recommended
-    ->setExpires(time() + 300)      // optional
-    ->setNonce('xJJ9;ro.3*kidney`') // optional one-time token, **uniqueness not checked**
+    ->setExpires(time() + 300)      // optional, enforced
+    ->setNonce('xJJ9;ro.3*kidney`') // optional one-time token, uniqueness SHOULD be checked/enforced by the calling application
     ->setTag('fediverse')           // optional app profile name
     ->setSignatureId('sig1')        // optional, default is sig1
     
@@ -158,10 +166,7 @@ To sign or verify an HTTP Response, use a ResponseInterface as the provided `$in
 ## Known issues
 Currently not implemented is the special handling of the `cookie` and `set-cookie` headers when using the `sf` modifier. For further information please see https://httpwg.org/http-extensions/draft-ietf-httpbis-retrofit.html and https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis-20 (or later). It is planned to implement this once RFC6265bis is finalised as a new RFC.
 
-Also not currently implemented are some of the signature algorithms; as we're currently focused primarily on rsa-sha256 and ed25519; and coverage of some algorithms in PHP is limited. 
-
 Pull requests welcome. 
-
 
 ## License
 
