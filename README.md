@@ -2,8 +2,11 @@
 
 A PHP 8.1+ library for signing and verifying HTTP messages (requests or responses) per [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421).
 
-Supports:
+At the time of writing, this was the closest thing to a reference implementation of RFC9421 that could be found for the PHP platform and one of only a handful of implementations with the full range of support for Structured-Fields and signing algorithms specified in that document.
 
+This is a fork of https://github.com/arduent/HTTP-Message-Signer (aka composer package quantificant/http-message-signer). 
+
+Supports:
 - PSR-7 requests (e.g., Guzzle)
 - Automatically verify body digest (content-digest header) -- if present
 - Algorithm support:
@@ -32,7 +35,6 @@ Please report issues. Thanks. Tested on PHP 8.4, should run fine on 8.1+
 composer require macgirvin/http-message-signer
 ```
 
-
 ## Notes
 
 An instance of a PSR-7 MessageInterface is passed to the sign and verify functions. This can be a RequestInterface or a ResponseInterface. Typically, this will be a RequestInterface. If your web framework does not supply a pre-populated PSR7-compatible request interface, you can quickly generate one using 
@@ -45,13 +47,13 @@ $request = ServerRequest::fromGlobals();
 
 This would typically be used to verify a message.
 
-If your project uses URL rewriting (such as Apache's 'mod_rewrite'), you may have difficulties verifying some request parameters using a PSR7 request generated using ServerRequest::fromGlobals(). In that case, you might wish instead to generate a minimal PSR7 Request Message which is populated from the original request URI and which is not affected by URL re-writing:
+If your project uses URL rewriting (such as Apache's 'mod_rewrite'), you may have difficulties verifying some request parameters using a PSR7 request generated using ServerRequest::fromGlobals() as shown here. In that case, you might wish instead to generate a minimal PSR7 Request Message which is populated from the original request URI and which is not affected by URL re-writing:
 
 ```
 use GuzzleHttp\Psr7\Request;
 
 // Generate PSR7 request from current HTTP request, which is NOT
-// affected by the use of Apache mod-rewrite.
+// affected by the use of Apache mod-rewrite or equivalent.
  
 function createRequest(string $baseurl)
 {
