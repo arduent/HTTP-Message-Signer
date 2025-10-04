@@ -109,6 +109,37 @@ final class HttpMessageSignerTest extends TestCase
 
     }
 
+    public function testEccSignatures(): void
+    {
+        $this->privateKey = file_get_contents(__DIR__ . '/keys/ecc-private.pem');
+        $this->publicKey = file_get_contents(__DIR__ . '/keys/ecc-public.pem');
+
+
+        $this->signer = (new HttpMessageSigner())
+            ->setPrivateKey($this->privateKey)
+            ->setPublicKey($this->publicKey)
+            ->setKeyId('test-key')
+            ->setAlgorithm('ecdsa-p256-sha256')
+            ->setCreated(time());
+
+        $body = '{"hello": "world"}';
+        $digest = $this->signer->createContentDigestHeader($body);
+
+        $request = new Request(
+            'POST',
+            'https://example.com/api',
+            [
+                'Host' => 'example.com',
+                'Content-Digest' => $digest
+            ],
+            $body
+        );
+
+        $signed = $this->signer->signRequest('("@method" "@target-uri" "host" "content-digest")', $request);
+        $this->assertTrue($this->signer->verifyRequest($signed));
+
+    }
+
     public function testSignsAndVerifiesWithBodyDigest(): void
     {
         $body = '{"message":"hello"}';

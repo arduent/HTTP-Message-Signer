@@ -9,7 +9,8 @@
     "bakame/http-structured-fields": "^2.0",
     "ext-openssl": "*",
     "phpseclib/phpseclib": "~3.0",
-    "phpseclib/phpseclib2_compat": "^1.0"
+    "phpseclib/phpseclib2_compat": "^1.0",
+    "paragonie/easy-ecc": "^1.3"
   },
   "require-dev": {
     "phpunit/phpunit": "^10.0"
