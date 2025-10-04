@@ -368,17 +368,13 @@ class HttpMessageSigner
     private function getFieldValue($fieldName, MessageInterface $interface, $headers, $parameters ): array
     {
         if ($interface instanceof RequestInterface) {
-            // The $interface has no single method to extract the target-uri, so build it from
-            // the available components.
-            $targetUri = $interface->getUri()->getScheme() . '://' . $this->getAuthority($interface)
-                . $interface->getUri()->getPath() . (($interface->getUri()->getQuery()) ? '?' . $interface->getUri()->getQuery() : '');
-
             $value = match ($fieldName) {
                 '@signature-params' => ['', ''],
                 '@method' => ['"@method"', strtoupper($interface->getMethod())],
                 '@authority' => ['"@authority"', $this->getAuthority($interface)],
                 '@scheme' => ['"@scheme"', strtolower($interface->getUri()->getScheme())],
-                '@target-uri' => ['"@target-uri"', $targetUri],
+                '@target-uri' => ['"@target-uri"', $interface->getUri()->getScheme() . '://' . $this->getAuthority($interface)
+                    . $interface->getUri()->getPath() . (($interface->getUri()->getQuery()) ? '?' . $interface->getUri()->getQuery() : '')],
                 '@request-target' => ['"@request-target"', $interface->getRequestTarget()],
                 '@path' => ['"@path"', $interface->getUri()->getPath()],
                 '@query' => ['"@query"', $interface->getUri()->getQuery()],
@@ -393,7 +389,6 @@ class HttpMessageSigner
                 default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
             };
         }
-
         return $value;
     }
 
