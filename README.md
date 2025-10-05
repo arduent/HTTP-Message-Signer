@@ -1,20 +1,28 @@
 # HTTP Message Signer (RFC 9421)
 
-
 A PHP 8.1+ library for signing and verifying HTTP messages (requests or responses) per [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421).
 
+At the time of writing, this was the closest thing to a reference implementation of RFC9421 that could be found for the PHP platform and one of only a handful of implementations with the full range of support for Structured-Fields and signing algorithms specified in that document.
+
+This is a fork of https://github.com/arduent/HTTP-Message-Signer (aka composer package quantificant/http-message-signer). 
+
 Supports:
-- RSA-v1.5-SHA256
-- Ed25519
-- HMAC-SHA256
-- RSA-PSS-SHA512
 - PSR-7 requests (e.g., Guzzle)
 - Automatically verify body digest (content-digest header) -- if present
-
+- Algorithm support:
+  - 'rsa-v1_5-sha256'
+  - 'rsa-v1_5-sha512'
+  - 'rsa-pss-sha512'
+  - 'ed25519'
+  - 'hmac-sha256'
+  - 'ecdsa-p256-sha256'
+  - 'ecdsa-p384-sha384'
+  
 Requirements:
 - bakame/http-structured-fields
 - phpseclib/phpseclib
 - psr/http-message
+- paragonie/easy-ecc
 
 ## Note
 
@@ -26,7 +34,6 @@ Please report issues. Thanks. Tested on PHP 8.4, should run fine on 8.1+
 ```bash
 composer require macgirvin/http-message-signer
 ```
-
 
 ## Notes
 
@@ -40,11 +47,14 @@ $request = ServerRequest::fromGlobals();
 
 This would typically be used to verify a message.
 
-If your project uses URL rewriting (such as Apache's 'mod_rewrite'), you may have difficulties verifying some request parameters using a PSR7 request generated using ServerRequest::fromGlobals(). In that case, you might wish instead to generate a minimal PSR7 Request Message which is populated from the original request URI and which is not affected by URL re-writing:
+If your project uses URL rewriting (such as Apache's 'mod_rewrite'), you may have difficulties verifying some request parameters using a PSR7 request generated using ServerRequest::fromGlobals() as shown here. In that case, you might wish instead to generate a minimal PSR7 Request Message which is populated from the original request URI and which is not affected by URL re-writing:
 
 ```php
 use GuzzleHttp\Psr7\Request;
 
+// Generate PSR7 request from current HTTP request, which is NOT
+// affected by the use of Apache mod-rewrite or equivalent.
+ 
 function createRequest(string $baseurl)
 {
     /**
@@ -100,11 +110,11 @@ $request = new Request(
 $signer = (new HttpMessageSigner())
     ->setPrivateKey($privateKey) // only needed for signing
     ->setPublicKey($publicKey)   // only needed for verifying
-    ->setKeyId('https://example.com/dave#rsaKey')  // required
-    ->setAlgorithm('rsa-sha256')    // required
+    ->setKeyId('https://example.com/dave#rsaKey')  // required when signing
+    ->setAlgorithm('rsa-v1_5-sha256')    // typically required when signing
     ->setCreated(time())            // recommended
-    ->setExpires(time() + 300)      // optional, contentious
-    ->setNonce('xJJ9;ro.3*kidney`') // optional one-time token
+    ->setExpires(time() + 300)      // optional, enforced
+    ->setNonce('xJJ9;ro.3*kidney`') // optional one-time token, uniqueness SHOULD be checked/enforced by the calling application
     ->setTag('fediverse')           // optional app profile name
     ->setSignatureId('sig1')        // optional, default is sig1
     
@@ -126,7 +136,7 @@ See full examples in `/tests`.
 
 ## Structured Fields
 
-RFC9421 makes heavy use of HTTP Structured Fields (RFC8941/RFC9651). The syntax is very precise and unforgiving.
+RFC9421 makes heavy use of HTTP Structured Fields (RFC8941/RFC9651). 
 
 The signRequest() method takes a structured InnerList of components to sign. These may be headers or derived fields.
 The string will look something like the following (where `...` represents additional components):
@@ -145,7 +155,7 @@ Field names beginning with '@' are components derived from the HTTP request but 
 
 Using the 'sf' parameter on a component will treat a signature component as a Structured Field when normalising the string. 
 
-However, parsing Structured Fields by adding the 'sf' parameter is likely to fail unless you know what `type` it is. A built-in table contains the type definition for a number of known stuctured header types. This list is probably incomplete. A method `addStructuredFieldTypes()` is available to add the type information so it can be successfully parsed. This takes an array with key of the lowercase header name and a value; which is one of 'list', 'innerlist', 'parameters, 'dictionary', 'item'. If the header name is in the list and the 'sf' modifier is used, the header will be parsed as the Structured Field type indicated.
+However, parsing arbitrary Structured Fields by adding the 'sf' parameter is likely to fail unless you know what `type` it is. A built-in table contains the type definition for a number of known stuctured header types. This list is probably incomplete. A method `addStructuredFieldTypes()` is available to add the type information so it can be successfully parsed. This takes an array with key of the lowercase header name and a value; which is one of 'list', 'innerlist', 'parameters, 'dictionary', 'item'. If the header name is in the list and the 'sf' modifier is used, the header will be parsed as the Structured Field type indicated.
 
 If a Structured Field is declared as type 'dictionary'; it is suitable for use with the RFC9421 `key` parameter. Using this parameter will fail if the Structured Field type is unknown or has not been registered.
 
@@ -156,10 +166,7 @@ To sign or verify an HTTP Response, use a ResponseInterface as the provided `$in
 ## Known issues
 Currently not implemented is the special handling of the `cookie` and `set-cookie` headers when using the `sf` modifier. For further information please see https://httpwg.org/http-extensions/draft-ietf-httpbis-retrofit.html and https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis-20 (or later). It is planned to implement this once RFC6265bis is finalised as a new RFC.
 
-Also not currently implemented are some of the signature algorithms; as we're currently focused primarily on rsa-sha256 and ed25519; and coverage of some algorithms in PHP is limited. 
-
 Pull requests welcome. 
-
 
 ## License
 

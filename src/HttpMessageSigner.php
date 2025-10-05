@@ -7,10 +7,13 @@ use Bakame\Http\StructuredFields\InnerList;
 use Bakame\Http\StructuredFields\Item;
 use Bakame\Http\StructuredFields\OuterList;
 use Bakame\Http\StructuredFields\Parameters;
+use Mdanter\Ecc\Crypto\Key\PrivateKey;
 use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use phpseclib\Crypt\RSA;
+use ParagonIE\EasyECC\EasyECC;
+use ParagonIE\EasyECC\ECDSA\{PublicKey, SecretKey};
 
 class HttpMessageSigner
 {
@@ -365,17 +368,13 @@ class HttpMessageSigner
     private function getFieldValue($fieldName, MessageInterface $interface, $headers, $parameters ): array
     {
         if ($interface instanceof RequestInterface) {
-            // The $interface has no single method to extract the target-uri, so build it from
-            // the available components.
-            $targetUri = $interface->getUri()->getScheme() . '://' . $this->getAuthority($interface)
-                . $interface->getUri()->getPath() . (($interface->getUri()->getQuery()) ? '?' . $interface->getUri()->getQuery() : '');
-
             $value = match ($fieldName) {
                 '@signature-params' => ['', ''],
                 '@method' => ['"@method"', strtoupper($interface->getMethod())],
                 '@authority' => ['"@authority"', $this->getAuthority($interface)],
                 '@scheme' => ['"@scheme"', strtolower($interface->getUri()->getScheme())],
-                '@target-uri' => ['"@target-uri"', $targetUri],
+                '@target-uri' => ['"@target-uri"', $interface->getUri()->getScheme() . '://' . $this->getAuthority($interface)
+                    . $interface->getUri()->getPath() . (($interface->getUri()->getQuery()) ? '?' . $interface->getUri()->getQuery() : '')],
                 '@request-target' => ['"@request-target"', $interface->getRequestTarget()],
                 '@path' => ['"@path"', $interface->getUri()->getPath()],
                 '@query' => ['"@query"', $interface->getUri()->getQuery()],
@@ -390,7 +389,6 @@ class HttpMessageSigner
                 default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
             };
         }
-
         return $value;
     }
 
@@ -523,6 +521,8 @@ class HttpMessageSigner
             'rsa-pss-sha512' => $this->pssSign($data),
             'ed25519' => $this->ed25519Sign($data),
             'hmac-sha256' => base64_encode(hash_hmac('sha256', $data, $this->privateKey, true)),
+            'ecdsa-p256-sha256' => $this->ecdsa256Sign($data),
+            'ecdsa-p384-sha384' => $this->ecdsa384Sign($data),
             default => throw new UnProcessableSignatureException("Unsupported algorithm: $this->algorithm")
         };
     }
@@ -542,6 +542,8 @@ class HttpMessageSigner
                 base64_encode(hash_hmac('sha256', $data, $this->privateKey, true)),
                 base64_encode($signature)
             ),
+            'ecdsa-p256-sha256' => $this->ecdsa256Verify($data, $signature),
+            'ecdsa-p384-sha384' => $this->ecdsa384Verify($data, $signature),
             default => false
         };
     }
@@ -561,6 +563,50 @@ class HttpMessageSigner
             throw new UnProcessableSignatureException("RSA signing failed");
         }
         return base64_encode($signature);
+    }
+
+    private function ecdsa256Sign(string $data): string
+    {
+        $ecc = new EasyECC('P256');
+        $signature = $ecc->sign($data, SecretKey::importPem($this->privateKey), false);
+        if (!$signature) {
+            throw new UnprocessableSignatureException("ECDSA signing failed");
+        }
+        return base64_encode($signature);
+    }
+
+    private function ecdsa384Sign(string $data): string
+    {
+        $ecc = new EasyECC('P384');
+        $signature = $ecc->sign($data, SecretKey::importPem($this->privateKey), false);
+        if (!$signature) {
+            throw new UnprocessableSignatureException("ECDSA signing failed");
+        }
+        return base64_encode($signature);
+    }
+
+    private function ecdsa256Verify(string $data, string $signature): bool
+    {
+        $ecc = new EasyECC('P256');
+        try {
+            $verified = $ecc->verify($data, PublicKey::importPem($this->publicKey), $signature, false);
+        }
+        catch (UnprocessableSignatureException $e) {
+            $verified = false;
+        }
+        return $verified;
+    }
+
+    private function ecdsa384Verify(string $data, string $signature): bool
+    {
+        $ecc = new EasyECC('P384');
+        try {
+            $verified = $ecc->verify($data, PublicKey::importPem($this->publicKey), $signature, false);
+        }
+        catch (UnprocessableSignatureException $e) {
+            $verified = false;
+        }
+        return $verified;
     }
 
     private function pssSign(string $data): string
