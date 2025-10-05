@@ -32,7 +32,7 @@ composer require macgirvin/http-message-signer
 
 An instance of a PSR-7 MessageInterface is passed to the sign and verify functions. This can be a RequestInterface or a ResponseInterface. Typically, this will be a RequestInterface. If your web framework does not supply a pre-populated PSR7-compatible request interface, you can quickly generate one using 
 
-```
+```php
 use GuzzleHttp\Psr7\ServerRequest;
 
 $request = ServerRequest::fromGlobals();
@@ -42,7 +42,7 @@ This would typically be used to verify a message.
 
 If your project uses URL rewriting (such as Apache's 'mod_rewrite'), you may have difficulties verifying some request parameters using a PSR7 request generated using ServerRequest::fromGlobals(). In that case, you might wish instead to generate a minimal PSR7 Request Message which is populated from the original request URI and which is not affected by URL re-writing:
 
-```
+```php
 use GuzzleHttp\Psr7\Request;
 
 function createRequest(string $baseurl)
