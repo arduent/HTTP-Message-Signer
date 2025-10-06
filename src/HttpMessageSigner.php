@@ -7,7 +7,6 @@ use Bakame\Http\StructuredFields\InnerList;
 use Bakame\Http\StructuredFields\Item;
 use Bakame\Http\StructuredFields\OuterList;
 use Bakame\Http\StructuredFields\Parameters;
-use Mdanter\Ecc\Crypto\Key\PrivateKey;
 use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
