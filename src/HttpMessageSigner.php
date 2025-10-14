@@ -11,6 +11,8 @@ use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use phpseclib\Crypt\RSA;
+use ParagonIE\EasyECC\EasyECC;
+use ParagonIE\EasyECC\ECDSA\{PublicKey, SecretKey};
 
 class HttpMessageSigner
 {
@@ -134,12 +136,11 @@ class HttpMessageSigner
      * @param array $headers
      * @param string $coveredFields
      *
-     * Can be used as a development function to peek into the internals of the exact things
-     * that were signed and/or test the internal results of data normalisation.
-     * This matches the sign() function except that it just returns the serialised string
-     * and does not sign it.
+     * Calculate the signature base from supplied components.
+     * Declared public so it can also be used as a development function to peek into the internals of the exact things
+     * that were signed and/or to test the internal results of data normalisation.
      */
-    public function calculateSignatureBase(array $headers, string $coveredFields, $interface)
+    public function calculateSignatureBase(array $headers, string $coveredFields, $interface): array
     {
         $signatureComponents = [];
         $processedComponents = [];
@@ -161,22 +162,13 @@ class HttpMessageSigner
             }
         }
 
-        $signatureInput = $coveredStructuredFields . ';keyid="'
-            . $this->keyId . '";alg="' . $this->algorithm . '"';
-
-        if ($this->created) {
-            $signatureInput .= ';created=' . $this->created;
-        }
-        if ($this->expires) {
-            $signatureInput .= ';expires=' . $this->expires;
-        }
-        if ($this->nonce) {
-            $signatureInput .= ';nonce="' . $this->nonce . '"';
-        }
-        if ($this->tag) {
-            $signatureInput .= ';tag="' . $this->tag . '"';
-        }
-
+        $signatureInput = $coveredStructuredFields
+            . ';keyid="' . $this->getkeyId()
+            . '";alg="' . $this->getAlgorithm() . '"'
+            . (($this->getCreated()) ? ';created=' . $this->getCreated() : '')
+            . (($this->getExpires()) ? ';expires=' . $this->getExpires() : '')
+            . (($this->getNonce()) ? ';nonce="' . $this->getNonce() . '"' : '')
+            . (($this->getTag()) ? ';tag="' . $this->getTag() . '"' : '');
 
         /**
          * Always include @signature-params in the result.
@@ -184,50 +176,17 @@ class HttpMessageSigner
         $signatureComponents[] = '"@signature-params": ' . $signatureInput;
 
         $signatureBase = implode("\n", $signatureComponents);
-        return $signatureBase;
+        return [$signatureInput, $signatureBase];
 
     }
 
     public function sign(array $headers, string $coveredFields, MessageInterface $interface): array
     {
-        $signatureComponents = [];
-        $processedComponents = [];
-
-        $dict = $this->parseStructuredDict($coveredFields);
-
-        if ($dict->isNotEmpty()) {
-            $coveredStructuredFields = $dict->__toString();
-            $indices = $dict->indices();
-            foreach ($indices as $index) {
-                $member = $dict->getByIndex($index);
-                if (!$member) {
-                    throw new UnProcessableSignatureException('Index ' . $index . ' not found');
-                }
-                if (in_array($member, $processedComponents, true)) {
-                    throw new UnProcessableSignatureException('Duplicate member found');
-                }
-                $processedComponents[] = $member;
-                $signatureComponents[] = $this->canonicalizeComponent($member, $headers, $interface);
-            }
-        }
-
-        $signatureInput = $coveredStructuredFields . ';keyid="'
-                . $this->keyId . '";alg="' . $this->algorithm . '"'
-                . (($this->created) ? ';created=' . $this->created : '')
-                . (($this->expires) ? ';expires=' . $this->expires : '')
-                . (($this->nonce) ? ';nonce="' . $this->nonce . '"' : '')
-                . (($this->tag) ? ';tag="' . $this->tag . '"' : '');
-
-        /**
-         * Always include @signature-params in the result.
-         */
-        $signatureComponents[] = '"@signature-params": ' . $signatureInput;
-
-        $signatureBase = implode("\n", $signatureComponents);
+        [$signatureInput, $signatureBase] = $this->calculateSignatureBase($headers, $coveredFields, $interface);
         $signature = $this->createSignature($signatureBase);
 
-        $headers['signature-input'] = "$this->signatureId=$signatureInput";
-        $headers['signature'] = "$this->signatureId=:$signature:";
+        $headers['signature-input'] = $this->getSignatureId() . '=' . $signatureInput;
+        $headers['signature'] = $this->getSignatureId() . '=:' . $signature . ':';
 
         return $headers;
     }
@@ -278,21 +237,6 @@ class HttpMessageSigner
         }
 
         $sigDict = $this->parseStructuredDict($headers['signature']);
-        if ($sigDict->isNotEmpty()) {
-            $indices = $sigDict->indices();
-            foreach ($indices as $index) {
-                [$dictName, $members] = $sigDict->getByIndex($index);
-                if ($members instanceof Item) {
-                    $signatures[$dictName] = $members->value();
-                }
-                if ($members instanceof InnerList) {
-                    $innerIndices = $members->indices();
-                    foreach ($innerIndices as $innerIndex) {
-                        $signatures[$dictName][] = $members->getByIndex($innerIndex);
-                    }
-                }
-            }
-        }
 
         foreach ($signatureComponents as $dictName => $dictComponents) {
             $namedSignatureComponents = $signatureComponents[$dictName];
@@ -304,7 +248,7 @@ class HttpMessageSigner
             }
 
             $decodedSig = base64_decode(trim($sigDict[$dictName]->__toString(), ':'));
-            return $this->verifySignature($signatureBase, $decodedSig, $params['alg'] ?? $this->algorithm);
+            return $this->verifySignature($signatureBase, $decodedSig, $parameters['alg'] ?? $this->getAlgorithm());
         }
         return false;
     }
@@ -379,20 +323,46 @@ class HttpMessageSigner
 
     private function getFieldValue($fieldName, MessageInterface $interface, $headers, $parameters ): array
     {
-        $value = match ($fieldName) {
-            '@signature-params' => ['', ''],
-            '@method' => ['"@method"', strtoupper($interface->getMethod())],
-            '@authority' => ['"@authority"', $interface->getUri()->getAuthority()],
-            '@scheme' => ['"@scheme"', strtolower($interface->getUri()->getScheme())],
-            '@target-uri' => ['"target-uri"', $interface->getUri()->__toString()],
-            '@request-target' => ['"@request-target"', $interface->getRequestTarget()],
-            '@path' => ['"@path"', $interface->getUri()->getPath()],
-            '@query' => ['"@query"', $interface->getUri()->getQuery()],
-            '@query-param' => $this->getQueryParam($interface, $parameters) ?? ['', ''],
-            '@status' => ['"@status"', '"@status": ' . $interface->getStatusCode()],
-            default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
-        };
+        if ($interface instanceof RequestInterface) {
+            $value = match ($fieldName) {
+                '@signature-params' => ['', ''],
+                '@method' => ['"@method"', strtoupper($interface->getMethod())],
+                '@authority' => ['"@authority"', $this->getNormalisedAuthority($interface)],
+                '@scheme' => ['"@scheme"', strtolower($interface->getUri()->getScheme())],
+                '@target-uri' => ['"@target-uri"', $interface->getUri()->getScheme() . '://' . $this->getNormalisedAuthority($interface)
+                    . $interface->getUri()->getPath() . (($interface->getUri()->getQuery()) ? '?' . $interface->getUri()->getQuery() : '')],
+                '@request-target' => ['"@request-target"', $interface->getRequestTarget()],
+                '@path' => ['"@path"', $interface->getUri()->getPath()],
+                '@query' => ['"@query"', $interface->getUri()->getQuery()],
+                '@query-param' => $this->getQueryParam($interface, $parameters) ?? ['', ''],
+                default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
+            };
+        }
+        else {
+            $value = match ($fieldName) {
+                '@signature-params' => ['', ''],
+                '@status' => ['"@status"', '"@status": ' . $interface->getStatusCode()],
+                default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
+            };
+        }
         return $value;
+    }
+
+    /**
+     * $interface->getUri()->getAuthority() requires additional filtering for RFC-9421.
+     * It must be lowercase and must not contain a port value.
+     * @param MessageInterface $interface
+     * @return string
+     * @throws UnprocessableSignatureException
+     */
+    protected function getNormalisedAuthority(MessageInterface $interface): string
+    {
+        if (method_exists($interface, 'getUri')) {
+            $authority = strtolower($interface->getUri()->getAuthority());
+            $authority = explode(':', $authority);
+            return $authority[0];
+        }
+        throw new UnprocessableSignatureException('Unable to extract authority from MessageInterface');
     }
 
     /**
@@ -400,9 +370,8 @@ class HttpMessageSigner
      * @return array|null
      *
      * Should not use PHP's parse_str function here, as it has some issues with
-     * spaces and dots in parameter names. These are unlikely to occur, but the
-     * following function treats them as opaque strings rather than as variable
-     * names.
+     * spaces and dots in parameter names. The following function treats them as
+     * opaque strings rather than as variable names.
      */
     private function parseQueryString(string $query): array|null
     {
@@ -426,7 +395,7 @@ class HttpMessageSigner
      * @param $name
      * @return string|null
      *
-     * Find one query parameter by name (which must supplied as parameters in the (structured) covered field list).
+     * Find one query parameter by name (which must be supplied as parameters in the covered field list).
      */
     private function getQueryParam($whichRequest, array $parameters): array
     {
@@ -500,47 +469,77 @@ class HttpMessageSigner
 
     private function createSignature(string $data): string
     {
-        return match ($this->algorithm) {
-            'rsa-v1_5-sha256' => $this->rsaSign($data),
-            'rsa-sha256' => $this->rsaSign($data),
-            'rsa-pss-sha512' => $this->pssSign($data),
+        $algorithm = $this->getAlgorithm();
+        return match ($algorithm) {
+            'rsa-v1_5-sha256' => $this->rsa256Sign($data),
+            'rsa-v1_5-sha512' => $this->rsa512Sign($data),
+            'rsa-pss-sha512' => $this->pss512Sign($data),
             'ed25519' => $this->ed25519Sign($data),
-            'hmac-sha256' => base64_encode(hash_hmac('sha256', $data, $this->privateKey, true)),
-            default => throw new UnProcessableSignatureException("Unsupported algorithm: $this->algorithm")
+            'hmac-sha256' => base64_encode(hash_hmac('sha256', $data, $this->getPrivateKey(), true)),
+            'ecdsa-p256-sha256' => $this->ecdsa256Sign($data),
+            'ecdsa-p384-sha384' => $this->ecdsa384Sign($data),
+            default => throw new UnProcessableSignatureException("Unsupported algorithm: $algorithm")
         };
     }
 
-    private function verifySignature(string $data, string $signature, string $alg): bool
+    private function verifySignature(string $data, string $signature, string $algorithm): bool
     {
-        return match ($alg) {
-            'rsa-v1_5-sha256' => openssl_verify($data, $signature, $this->publicKey,
-                    OPENSSL_ALGO_SHA256) === 1,
-            'rsa-sha256' => openssl_verify($data, $signature, $this->publicKey,
-                    OPENSSL_ALGO_SHA256) === 1,
-            'rsa-pss-sha512' => $this->pssVerify($data, $signature),
-            'ed25519' => openssl_verify($data, $signature, $this->publicKey, "Ed25519") === 1,
+        return match ($algorithm) {
+            'rsa-v1_5-sha256' => openssl_verify($data, $signature, $this->getPublicKey(), OPENSSL_ALGO_SHA256) === 1,
+            'rsa-v1_5-sha512' => openssl_verify($data, $signature, $this->getPublicKey(), OPENSSL_ALGO_SHA512) === 1,
+            'rsa-pss-sha512' => $this->pss512Verify($data, $signature),
+            'ed25519' => openssl_verify($data, $signature, $this->getPublicKey(), 'Ed25519') === 1,
             'hmac-sha256' => hash_equals(
-                base64_encode(hash_hmac('sha256', $data, $this->privateKey, true)),
+                base64_encode(hash_hmac('sha256', $data, $this->getPrivateKey(), true)),
                 base64_encode($signature)
             ),
+            'ecdsa-p256-sha256' => $this->ecdsa256Verify($data, $signature),
+            'ecdsa-p384-sha384' => $this->ecdsa384Verify($data, $signature),
             default => false
         };
     }
 
     /* sign with rsa or ed25519 */
 
-    private function rsaSign(string $data): string
+    private function rsa256Sign(string $data): string
     {
-        if (!openssl_sign($data, $signature, $this->privateKey, OPENSSL_ALGO_SHA256)) {
+        if (!openssl_sign($data, $signature, $this->getPrivateKey(), OPENSSL_ALGO_SHA256)) {
+            throw new UnProcessableSignatureException("RSA signing failed");
+        }
+        return base64_encode($signature);
+    }
+    private function rsa512Sign(string $data): string
+    {
+        if (!openssl_sign($data, $signature, $this->getPrivateKey(), OPENSSL_ALGO_SHA512)) {
             throw new UnProcessableSignatureException("RSA signing failed");
         }
         return base64_encode($signature);
     }
 
-    private function pssSign(string $data): string
+    private function ecdsa256Sign(string $data): string
+    {
+        $ecc = new EasyECC('P256');
+        $signature = $ecc->sign($data, SecretKey::importPem($this->getPrivateKey()), false);
+        if (!$signature) {
+            throw new UnprocessableSignatureException("ECDSA signing failed");
+        }
+        return base64_encode($signature);
+    }
+
+    private function ecdsa384Sign(string $data): string
+    {
+        $ecc = new EasyECC('P384');
+        $signature = $ecc->sign($data, SecretKey::importPem($this->getPrivateKey()), false);
+        if (!$signature) {
+            throw new UnprocessableSignatureException("ECDSA signing failed");
+        }
+        return base64_encode($signature);
+    }
+
+    private function pss512Sign(string $data): string
     {
         $rsa = new RSA();
-        if ($rsa->loadKey($this->privateKey) !== true) {
+        if ($rsa->loadKey($this->getPrivateKey()) !== true) {
             throw new UnprocessableSignatureException("PSS loadkey failure");
         };
         $rsa->setHash('sha512');
@@ -556,16 +555,40 @@ class HttpMessageSigner
 
     private function ed25519Sign(string $data): string
     {
-        if (!openssl_sign($data, $signature, $this->privateKey, "Ed25519")) {
+        if (!openssl_sign($data, $signature, $this->getPrivateKey(), "Ed25519")) {
             throw new UnProcessableSignatureException("Ed25519 signing failed");
         }
         return base64_encode($signature);
     }
 
-    private function pssVerify(string $data, $signature): bool
+    private function ecdsa256Verify(string $data, string $signature): bool
+    {
+        $ecc = new EasyECC('P256');
+        try {
+            $verified = $ecc->verify($data, PublicKey::importPem($this->getPublicKey()), $signature, false);
+        }
+        catch (UnprocessableSignatureException $e) {
+            $verified = false;
+        }
+        return $verified;
+    }
+
+    private function ecdsa384Verify(string $data, string $signature): bool
+    {
+        $ecc = new EasyECC('P384');
+        try {
+            $verified = $ecc->verify($data, PublicKey::importPem($this->getPublicKey()), $signature, false);
+        }
+        catch (UnprocessableSignatureException $e) {
+            $verified = false;
+        }
+        return $verified;
+    }
+
+    private function pss512Verify(string $data, $signature): bool
     {
         $rsa = new RSA();
-        if ($rsa->loadKey($this->publicKey) !== true) {
+        if (!$rsa->loadKey($this->getPublicKey())) {
             throw new UnprocessableSignatureException("PSS loadkey failure");
         };
         $rsa->setHash('sha512');
