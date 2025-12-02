@@ -52,7 +52,9 @@ final class HttpMessageSignerTest extends TestCase
         $request = $this->signer->signRequest($coveredFields, $request);
         $this->assertTrue($request->hasHeader('signature'));
         $this->assertTrue($request->hasHeader('signature-input'));
-        $normalised = explode("\n", $this->signer->calculateSignatureBase($this->signer->getHeaders($request), $coveredFields, $request));
+
+        [$signatureInput, $signatureBase] = $this->signer->calculateSignatureBase($this->signer->getHeaders($request), $coveredFields, $request);
+        $normalised = explode("\n", $signatureBase);
 
         $this->assertContains('"example-header";bs: :dmFsdWUsIHdpdGgsIGxvdHM=:, :b2YsIGNvbW1hcw==:', $normalised);
         $this->assertContains('"@method": POST', $normalised);
@@ -83,7 +85,6 @@ final class HttpMessageSignerTest extends TestCase
         $this->privateKey = file_get_contents(__DIR__ . '/keys/pss-private.pem');
         $this->publicKey = file_get_contents(__DIR__ . '/keys/pss-public.pem');
 
-
         $this->signer = (new HttpMessageSigner())
             ->setPrivateKey($this->privateKey)
             ->setPublicKey($this->publicKey)
@@ -106,14 +107,41 @@ final class HttpMessageSignerTest extends TestCase
 
         $signed = $this->signer->signRequest('("@method" "@target-uri" "host" "content-digest")', $request);
         $this->assertTrue($this->signer->verifyRequest($signed));
+    }
 
+    public function testEdSignatures(): void
+    {
+        $this->privateKey = file_get_contents(__DIR__ . '/keys/ed25519-private.pem');
+        $this->publicKey = file_get_contents(__DIR__ . '/keys/ed25519-public.pem');
+
+        $this->signer = (new HttpMessageSigner())
+            ->setPrivateKey($this->privateKey)
+            ->setPublicKey($this->publicKey)
+            ->setKeyId('test-key')
+            ->setAlgorithm('ed25519')
+            ->setCreated(time());
+
+        $body = '{"hello": "world"}';
+        $digest = $this->signer->createContentDigestHeader($body);
+
+        $request = new Request(
+            'POST',
+            'https://example.com/api',
+            [
+                'Host' => 'example.com',
+                'Content-Digest' => $digest
+            ],
+            $body
+        );
+
+        $signed = $this->signer->signRequest('("@method" "@target-uri" "host" "content-digest")', $request);
+        $this->assertTrue($this->signer->verifyRequest($signed));
     }
 
     public function testEccSignatures(): void
     {
         $this->privateKey = file_get_contents(__DIR__ . '/keys/ecc-private.pem');
         $this->publicKey = file_get_contents(__DIR__ . '/keys/ecc-public.pem');
-
 
         $this->signer = (new HttpMessageSigner())
             ->setPrivateKey($this->privateKey)
@@ -137,7 +165,6 @@ final class HttpMessageSignerTest extends TestCase
 
         $signed = $this->signer->signRequest('("@method" "@target-uri" "host" "content-digest")', $request);
         $this->assertTrue($this->signer->verifyRequest($signed));
-
     }
 
     public function testSignsAndVerifiesWithBodyDigest(): void
@@ -194,7 +221,6 @@ final class HttpMessageSignerTest extends TestCase
             ]
         );
 
-
         $signed = $this->signer->signRequest('("@method" "@path" "host" "date")', $request);
 
         $tampered = $signed->withHeader('Host', 'attacker.com');
@@ -213,23 +239,22 @@ final class HttpMessageSignerTest extends TestCase
             ]
         );
 
-        $this->assertFalse($this->signer->verifyRequest($request),
-                                'Unsigned request should be invalid');
+        $this->assertFalse($this->signer->verifyRequest($request), 'Unsigned request should be invalid');
     }
 
     public function testParsesRawHttpMessageCorrectly(): void
     {
 
         $raw = RawHttpBuilder::fromParts(
-                'POST',
-                '/foo',
-                [
-                        'Host'=>'example.com',
-                        'Date'=>'Tue, 13 May 2025 00:00:01 GMT',
-                        'Content-Type' => 'application/json',
-                        'Content-Digest' => 'sha-256=:abcd1234=:'
-                ],
-                '{"message":"hello"}'
+            'POST',
+            '/foo',
+            [
+                'Host'=>'example.com',
+                'Date'=>'Tue, 13 May 2025 00:00:01 GMT',
+                'Content-Type' => 'application/json',
+                'Content-Digest' => 'sha-256=:abcd1234=:'
+            ],
+            '{"message":"hello"}'
         );
 
         $parsed = HttpMessageSigner::parseHttpMessage($raw);
@@ -242,7 +267,7 @@ final class HttpMessageSignerTest extends TestCase
         $this->assertEquals('{"message":"hello"}', $parsed['body']);
     }
 
-    public function testManualInpectSignature(): void
+    public function testManualInspectSignature(): void
     {
         $request = new Request(
             'POST',
@@ -271,15 +296,16 @@ final class HttpMessageSignerTest extends TestCase
             echo $name . ": " . implode(', ', $values) . PHP_EOL;
         }
 
+        [$signatureInput, $signatureBase] = $this->signer->calculateSignatureBase($this->signer->getHeaders($request), $coveredFields, $request);
+        $normalised = explode("\n", $signatureBase);
+
         echo "\n\nNormalised signature components\n\n";
 
-        $normalised = explode("\n", $this->signer->calculateSignatureBase($this->signer->getHeaders($request), $coveredFields, $request));
         foreach ($normalised as $component) {
             echo $component . PHP_EOL;
         }
         // Optional assertion to keep PHPUnit happy
         $this->assertTrue($request->hasHeader('signature'), 'Signature header should exist');
     }
-
 }
 
