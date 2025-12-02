@@ -15,6 +15,7 @@ use phpseclib3\Crypt\PublicKeyLoader;
 use ParagonIE\EasyECC\EasyECC;
 use ParagonIE\EasyECC\ECDSA\{PublicKey, SecretKey};
 
+
 class HttpMessageSigner
 {
     private string $keyId;
@@ -471,36 +472,93 @@ class HttpMessageSigner
     private function createSignature(string $data): string
     {
         $algorithm = $this->getAlgorithm();
-        return match ($algorithm) {
-            'rsa-v1_5-sha256' => $this->rsa256Sign($data),
-            'rsa-v1_5-sha512' => $this->rsa512Sign($data),
-            'rsa-pss-sha512' => $this->pss512Sign($data),
-            'ed25519' => $this->ed25519Sign($data),
-            'hmac-sha256' => base64_encode(hash_hmac('sha256', $data, $this->getPrivateKey(), true)),
-            'ecdsa-p256-sha256' => $this->ecdsa256Sign($data),
-            'ecdsa-p384-sha384' => $this->ecdsa384Sign($data),
-            default => throw new UnProcessableSignatureException("Unsupported algorithm: $algorithm")
+
+        switch ($algorithm) {
+            case 'RS256':
+            case 'rsa-v1_5-sha256':
+                return $this->rsa256Sign($data);
+            case 'RS384':
+            case 'rsa-v1_5-sha384':
+                return $this->rsa384Sign($data);
+            case 'RS512':
+            case 'rsa-v1_5-sha512':
+                return $this->rsa512Sign($data);
+            case 'EdDSA':
+            case 'Ed25519':
+            case 'ed25519':
+                return $this->ed25519Sign($data);
+            case 'ES256':
+            case 'ecdsa-p256-sha256':
+                return $this->ecdsa256Sign($data);
+            case 'ES384':
+            case 'ecdsa-p384-sha384':
+                return $this->ecdsa384Sign($data);
+            case 'ES512':
+            case 'ecdsa-p512-sha512':
+                return $this->ecdsa512Sign($data);
+            case 'HS256':
+            case 'hmac-sha256':
+                return base64_encode(hash_hmac('sha256', $data, $this->getPrivateKey(), true));
+            case 'HS384':
+            case 'hmac-sha384':
+                return base64_encode(hash_hmac('sha384', $data, $this->getPrivateKey(), true));
+            case 'HS512':
+            case 'hmac-sha512':
+                return base64_encode(hash_hmac('sha512', $data, $this->getPrivateKey(), true));
+            case 'rsa-pss-sha512':
+                return $this->pss512Sign($data);
+            default:
+                throw new UnProcessableSignatureException("Unsupported algorithm: $algorithm");
         };
     }
 
     private function verifySignature(string $data, string $signature, string $algorithm): bool
     {
-        return match ($algorithm) {
-            'rsa-v1_5-sha256' => openssl_verify($data, $signature, $this->getPublicKey(), OPENSSL_ALGO_SHA256) === 1,
-            'rsa-v1_5-sha512' => openssl_verify($data, $signature, $this->getPublicKey(), OPENSSL_ALGO_SHA512) === 1,
-            'rsa-pss-sha512' => $this->pss512Verify($data, $signature),
-            'ed25519' => $this->ed25519Verify($data, $signature),
-            'hmac-sha256' => hash_equals(
-                base64_encode(hash_hmac('sha256', $data, $this->getPrivateKey(), true)),
+        switch ($algorithm) {
+            case 'RS256':
+            case 'rsa-v1_5-sha256':
+                return openssl_verify($data, $signature, $this->getPublicKey(), OPENSSL_ALGO_SHA256) === 1;
+            case 'RS384':
+            case 'rsa-v1_5-sha384':
+                return openssl_verify($data, $signature, $this->getPublicKey(), OPENSSL_ALGO_SHA384) === 1;
+            case 'RS512':
+            case 'rsa-v1_5-sha512':
+                return openssl_verify($data, $signature, $this->getPublicKey(), OPENSSL_ALGO_SHA512) === 1;
+            case 'EdDSA':
+            case 'Ed25519':
+            case 'ed25519':
+                return $this->ed25519Verify($data, $signature);
+            case 'ES256':
+            case 'ecdsa-p256-sha256':
+                return $this->ecdsa256Verify($data, $signature);
+            case 'ES384':
+            case 'ecdsa-p384-sha384':
+                return $this->ecdsa384Verify($data, $signature);
+            case 'ES512':
+            case 'ecdsa-p512-sha512':
+                return $this->ecdsa512Verify($data, $signature);
+            case 'HS256':
+            case 'hmac-sha256':
+               return hash_equals(base64_encode(hash_hmac('sha256', $data, $this->getPrivateKey(), true)),
                 base64_encode($signature)
-            ),
-            'ecdsa-p256-sha256' => $this->ecdsa256Verify($data, $signature),
-            'ecdsa-p384-sha384' => $this->ecdsa384Verify($data, $signature),
-            default => false
-        };
+            );
+            case 'HS384':
+            case 'hmac-sha384':
+                return hash_equals(base64_encode(hash_hmac('sha384', $data, $this->getPrivateKey(), true)),
+                    base64_encode($signature)
+                );
+            case 'HS512':
+            case 'hmac-sha512':
+                return hash_equals(base64_encode(hash_hmac('sha512', $data, $this->getPrivateKey(), true)),
+                    base64_encode($signature)
+                );
+            case 'rsa-pss-sha512':
+                return $this->pss512Verify($data, $signature);
+            default:
+                return false;
+        }
     }
 
-    /* sign with rsa or ed25519 */
 
     private function rsa256Sign(string $data): string
     {
@@ -509,6 +567,15 @@ class HttpMessageSigner
         }
         return base64_encode($signature);
     }
+
+    private function rsa384Sign(string $data): string
+    {
+        if (!openssl_sign($data, $signature, $this->getPrivateKey(), OPENSSL_ALGO_SHA384)) {
+            throw new UnProcessableSignatureException("RSA signing failed");
+        }
+        return base64_encode($signature);
+    }
+
     private function rsa512Sign(string $data): string
     {
         if (!openssl_sign($data, $signature, $this->getPrivateKey(), OPENSSL_ALGO_SHA512)) {
@@ -530,6 +597,16 @@ class HttpMessageSigner
     private function ecdsa384Sign(string $data): string
     {
         $ecc = new EasyECC('P384');
+        $signature = $ecc->sign($data, SecretKey::importPem($this->getPrivateKey()), false);
+        if (!$signature) {
+            throw new UnprocessableSignatureException("ECDSA signing failed");
+        }
+        return base64_encode($signature);
+    }
+
+    private function ecdsa512Sign(string $data): string
+    {
+        $ecc = new EasyECC('P512');
         $signature = $ecc->sign($data, SecretKey::importPem($this->getPrivateKey()), false);
         if (!$signature) {
             throw new UnprocessableSignatureException("ECDSA signing failed");
@@ -604,6 +681,19 @@ class HttpMessageSigner
         return $verified;
     }
 
+    private function ecdsa512Verify(string $data, string $signature): bool
+    {
+        $ecc = new EasyECC('P512');
+        try {
+            $verified = $ecc->verify($data, PublicKey::importPem($this->getPublicKey()), $signature, false);
+        }
+        catch (UnprocessableSignatureException $e) {
+            $verified = false;
+        }
+        return $verified;
+    }
+
+
     private function pss512Verify(string $data, $signature): bool
     {
         $rsa = new RSA();
@@ -620,6 +710,7 @@ class HttpMessageSigner
         }
         return $verified;
     }
+
 
     /* parse a structed dict */
 

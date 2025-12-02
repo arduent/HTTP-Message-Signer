@@ -17,17 +17,10 @@ Supports:
   - 'hmac-sha256'
   - 'ecdsa-p256-sha256'
   - 'ecdsa-p384-sha384'
-  
-Requirements:
-- bakame/http-structured-fields
-- phpseclib/phpseclib
-- psr/http-message
-- paragonie/easy-ecc
 
 ## Note
 
 Please report issues. Thanks. Tested on PHP 8.4, should run fine on 8.1+
-
 
 ## Installation
 
