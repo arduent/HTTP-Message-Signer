@@ -40,16 +40,17 @@ final class HttpMessageSignerTest extends TestCase
                 'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
             ]
         );
-        // Use this method to provide an additional header with same name as an existing header.
+        /**
+         * Use $request->withAddedHeader() method to provide an additional header with same name as an existing header.
+         */
         $request = $request->withHeader('Example-Header', 'value, with, lots');
         $request = $request->withAddedHeader('Example-Header', 'of, commas');
         $request = $request->withHeader('If-None-Match', 'W/"abcdef", "ghijkl", *');
-        /**
-         * Whenever we modify the $request, overwrite the HttpMessageSigner instance with an updated copy.
-         */
+
         $coveredFields = '("example-header";bs "@method" "@path" "host" "if-none-match";sf "date" "date";sf "@request-target" "@target-uri" "@query-param";name="baz" "@query-param";name="bat" "example-dict" "example-dict";sf "example-dict";key="a" "example-dict";key="b" "example-dict";key="c" "example-dict";key="d")';
         $this->signer->addStructuredFieldType(['example-dict' => 'dictionary']);
         $request = $this->signer->signRequest($coveredFields, $request);
+
         $this->assertTrue($request->hasHeader('signature'));
         $this->assertTrue($request->hasHeader('signature-input'));
 
@@ -90,6 +91,35 @@ final class HttpMessageSignerTest extends TestCase
             ->setPublicKey($this->publicKey)
             ->setKeyId('test-key')
             ->setAlgorithm('rsa-pss-sha512')
+            ->setCreated(time());
+
+        $body = '{"hello": "world"}';
+        $digest = $this->signer->createContentDigestHeader($body);
+
+        $request = new Request(
+            'POST',
+            'https://example.com/api',
+            [
+                'Host' => 'example.com',
+                'Content-Digest' => $digest
+            ],
+            $body
+        );
+
+        $signed = $this->signer->signRequest('("@method" "@target-uri" "host" "content-digest")', $request);
+        $this->assertTrue($this->signer->verifyRequest($signed));
+    }
+
+    public function testEdSignatures(): void
+    {
+        $this->privateKey = file_get_contents(__DIR__ . '/keys/ed25519-private.pem');
+        $this->publicKey = file_get_contents(__DIR__ . '/keys/ed25519-public.pem');
+
+        $this->signer = (new HttpMessageSigner())
+            ->setPrivateKey($this->privateKey)
+            ->setPublicKey($this->publicKey)
+            ->setKeyId('test-key')
+            ->setAlgorithm('ed25519')
             ->setCreated(time());
 
         $body = '{"hello": "world"}';

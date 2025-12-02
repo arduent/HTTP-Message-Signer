@@ -17,17 +17,10 @@ Supports:
   - 'hmac-sha256'
   - 'ecdsa-p256-sha256'
   - 'ecdsa-p384-sha384'
-  
-Requirements:
-- bakame/http-structured-fields
-- phpseclib/phpseclib
-- psr/http-message
-- paragonie/easy-ecc
 
 ## Note
 
 Please report issues. Thanks. Tested on PHP 8.4, should run fine on 8.1+
-
 
 ## Installation
 
@@ -165,6 +158,8 @@ To sign or verify an HTTP Response, use a ResponseInterface as the provided `$in
 
 ## Known issues
 Currently not implemented is the special handling of the `cookie` and `set-cookie` headers when using the `sf` modifier. For further information please see https://httpwg.org/http-extensions/draft-ietf-httpbis-retrofit.html and https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis-20 (or later). It is planned to implement this once RFC6265bis is finalised as a new RFC.
+
+Currently, PEM keys are supported as per the RFC. JWT/JWK are not yet supported, and support of other key formats depends on the algorithm used. 
 
 Pull requests welcome. 
 
