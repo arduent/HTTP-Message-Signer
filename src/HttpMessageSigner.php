@@ -11,6 +11,7 @@ use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use phpseclib\Crypt\RSA;
+use phpseclib3\Crypt\PublicKeyLoader;
 use ParagonIE\EasyECC\EasyECC;
 use ParagonIE\EasyECC\ECDSA\{PublicKey, SecretKey};
 
@@ -488,7 +489,7 @@ class HttpMessageSigner
             'rsa-v1_5-sha256' => openssl_verify($data, $signature, $this->getPublicKey(), OPENSSL_ALGO_SHA256) === 1,
             'rsa-v1_5-sha512' => openssl_verify($data, $signature, $this->getPublicKey(), OPENSSL_ALGO_SHA512) === 1,
             'rsa-pss-sha512' => $this->pss512Verify($data, $signature),
-            'ed25519' => openssl_verify($data, $signature, $this->getPublicKey(), 'Ed25519') === 1,
+            'ed25519' => $this->ed25519Verify($data, $signature),
             'hmac-sha256' => hash_equals(
                 base64_encode(hash_hmac('sha256', $data, $this->getPrivateKey(), true)),
                 base64_encode($signature)
@@ -555,10 +556,28 @@ class HttpMessageSigner
 
     private function ed25519Sign(string $data): string
     {
-        if (!openssl_sign($data, $signature, $this->getPrivateKey(), "Ed25519")) {
-            throw new UnProcessableSignatureException("Ed25519 signing failed");
+        try {
+            $private_key = PublicKeyLoader::loadPrivateKey($this->getPrivateKey());
+            $signature = $private_key->sign($data);
+
+        } catch (\Exception $e) {
+            $signature = '';
+            throw new UnprocessableSignatureException($e->getMessage());
         }
         return base64_encode($signature);
+    }
+
+    private function ed25519Verify(string $data, $signature): bool
+    {
+        try {
+            $public_key = PublicKeyLoader::loadPublicKey($this->getPublicKey());
+            $verified = $public_key->verify($data, $signature);
+        }
+        catch (\Exception $e) {
+            $verified = false;
+            throw new UnProcessableSignatureException($e->getMessage());
+        }
+        return $verified;
     }
 
     private function ecdsa256Verify(string $data, string $signature): bool
