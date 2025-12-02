@@ -10,13 +10,28 @@ Supports:
 - PSR-7 requests (e.g., Guzzle)
 - Automatically verify body digest (content-digest header) -- if present
 - Algorithm support:
-  - 'rsa-v1_5-sha256'
-  - 'rsa-v1_5-sha512'
-  - 'rsa-pss-sha512'
-  - 'ed25519'
-  - 'hmac-sha256'
-  - 'ecdsa-p256-sha256'
-  - 'ecdsa-p384-sha384'
+  - 'RS256' (JWT)
+  - 'rsa-v1_5-sha256' (RFC9421)
+  - 'RS384' (JWT)
+  - 'rsa-v1_5-sha384'
+  - 'RS512' (JWT)
+  - 'rsa-v1_5-sha512' (RFC9421)
+  - 'rsa-pss-sha512' (RFC9421)
+  - 'EdDSA' (JWT)
+  - 'Ed25519' (openssl)
+  - 'ed25519' (RFC9421)
+  - 'HS256' (JWT)
+  - 'hmac-sha256' (RFC9421)
+  - 'HS384' (JWT)
+  - 'hmac-sha384'
+  - 'HS512' (JWT)
+  - 'hmac-sha512'
+  - 'ES256' (JWT)
+  - 'ecdsa-p256-sha256' (RFC9421)
+  - 'ES384' (JWT)
+  - 'ecdsa-p384-sha384' (RFC9421)
+  - 'ES512' (JWT)
+  - 'ecdsa-p512-sha512'
 
 ## Note
 
@@ -159,7 +174,9 @@ To sign or verify an HTTP Response, use a ResponseInterface as the provided `$in
 ## Known issues
 Currently not implemented is the special handling of the `cookie` and `set-cookie` headers when using the `sf` modifier. For further information please see https://httpwg.org/http-extensions/draft-ietf-httpbis-retrofit.html and https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis-20 (or later). It is planned to implement this once RFC6265bis is finalised as a new RFC.
 
-Currently, PEM keys are supported as per the RFC. JWT/JWK are not yet supported, and support of other key formats depends on the algorithm used. 
+Currently, PEM keys are supported as per the RFC examples. JWT/JWK keys are not yet fully supported. A number of encryption libraries are being used to obtain coverage of the entire suite of algorithms under PHP, and their key format support varies dramatically.  
+
+JWT/JWK algorithm identifiers are permitted for any of the supported algorithms. For instance, 'RS256' and 'rsa-v1_5-sha256' are inter-changeable, depending on your application requirements. 
 
 Pull requests welcome. 
 
