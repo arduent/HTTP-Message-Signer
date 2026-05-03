@@ -343,7 +343,7 @@ class HttpMessageSigner
         else {
             $value = match ($fieldName) {
                 '@signature-params' => ['', ''],
-                '@status' => ['"@status"', '"@status": ' . $interface->getStatusCode()],
+                '@status' => ['"@status"', $interface->getStatusCode()],
                 default => ['"' . $fieldName . '"', trim($headers[$fieldName] ?? '')],
             };
         }
