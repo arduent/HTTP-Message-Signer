@@ -7,7 +7,7 @@ At the time of writing, this was the closest thing to a reference implementation
 This is a fork of https://github.com/arduent/HTTP-Message-Signer (aka composer package quantificant/http-message-signer).
 
 Supports:
-- PSR-7 requests (e.g., Guzzle)
+- PSR-7 HTTP message requests/responses
 - Automatically verify body digest (content-digest header) -- if present
 - Algorithm support:
   - 'RS256' (JWT)
@@ -96,7 +96,7 @@ function createRequest(string $baseurl)
  }
 ```
 
-To sign a message, install the composer package guzzlehttp/psr7 and create an instance of `Request`.
+To sign a message, install the composer package guzzlehttp/psr7 (or any other PSR7 compliant interface) and create an instance of `Request` or `Response` as appropriate.
 
 ## Usage
 
@@ -174,7 +174,7 @@ To sign or verify an HTTP Response, use a ResponseInterface as the provided `$in
 ## Known issues
 Currently not implemented is the special handling of the `cookie` and `set-cookie` headers when using the `sf` modifier. For further information please see https://httpwg.org/http-extensions/draft-ietf-httpbis-retrofit.html and https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis-20 (or later). It is planned to implement this once RFC6265bis is finalised as a new RFC.
 
-Currently, PEM keys are supported as per the RFC examples. JWT/JWK keys are not yet fully supported. A number of encryption libraries are being used to obtain coverage of the entire suite of algorithms under PHP, and their key format support varies dramatically.  
+Currently, PEM keys are supported as per the RFC examples. JWT/JWK keys are not yet fully supported. A number of encryption libraries are being used to obtain coverage of the entire suite of supported algorithms under PHP, and their key format support varies dramatically.  
 
 JWT/JWK algorithm identifiers are permitted for any of the supported algorithms. For instance, 'RS256' and 'rsa-v1_5-sha256' are inter-changeable, depending on your application requirements. 
 
