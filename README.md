@@ -4,8 +4,6 @@ A PHP 8.1+ library for signing and verifying HTTP messages (requests or response
 
 At the time of writing, this was the closest thing to a reference implementation of RFC9421 that could be found for the PHP platform and one of only a handful of implementations with the full range of support for Structured-Fields and signing algorithms specified in that document.
 
-This is a fork of https://github.com/arduent/HTTP-Message-Signer (aka composer package quantificant/http-message-signer).
-
 Supports:
 - PSR-7 HTTP message requests/responses
 - Automatically verify body digest (content-digest header) -- if present
@@ -40,7 +38,7 @@ Please report issues. Thanks. Tested on PHP 8.4, should run fine on 8.1+
 ## Installation
 
 ```bash
-composer require macgirvin/http-message-signer
+composer require arduent/http-message-signer
 ```
 
 ## Notes
