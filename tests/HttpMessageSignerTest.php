@@ -81,6 +81,45 @@ final class HttpMessageSignerTest extends TestCase
         $this->assertTrue($isValid, 'Signed request should be valid');
     }
 
+    public function testSignsAndVerifiesValidResponse(): void
+    {
+        $date = gmdate('D, d M Y H:i:s T');
+        $originalRequest = new Request(
+            'POST',
+            'https://api.example.com/resource?bat&baz=3',
+            [
+                'Host' => 'api.example.com',
+                'Date' => $date,
+                'x-test' => '',
+                'Example-Dict' => '  a=1,    b=2;x=1;y=2,   c=(a   b   c), d ',
+            ]
+        );
+
+        $response = new Response(
+            200,
+            [
+                'content-type' => 'text/json; charset=utf-8',
+                'Date' => $date,
+            ],
+            '{"foo":"bar"}'
+        );
+
+        $coveredFields = '("date" "content-type" "@status" "host";req)';
+
+        $response = $this->signer->signRequest($coveredFields, $response, $originalRequest);
+
+        $this->assertTrue($response->hasHeader('signature'));
+        $this->assertTrue($response->hasHeader('signature-input'));
+
+        [$signatureInput, $signatureBase] = $this->signer->calculateSignatureBase($this->signer->getHeaders($response), $coveredFields, $response);
+        $normalised = explode("\n", $signatureBase);
+        print_r($normalised);
+
+        $isValid = $this->signer->verifyRequest($response, $originalRequest);
+        $this->assertTrue($isValid, 'Signed request should be valid');
+    }
+
+
     public function testPssSignatures(): void
     {
         $this->privateKey = file_get_contents(__DIR__ . '/keys/pss-private.pem');
